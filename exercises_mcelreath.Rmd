@@ -1,0 +1,367 @@
+---
+title: "McElreath exercises"
+author: "DVM Bishop"
+date: "15/04/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exercises/code chunks from chapter 2
+
+```{r grid}
+# define grid
+p_grid <- seq( from=0 , to=1 , length.out=20)
+# define prior
+#prior <- rep( 1 , 20 )
+prior <- ifelse( p_grid < 0.5 , 0 , 1 )  #this was defined in ch 2 as alternative to uniform prior - means that values < .5 have prior of zero
+# compute likelihood at each value in grid
+likelihood <- dbinom( 5 , size=7 , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+plot( p_grid , posterior , type="b" ,
+      xlab="probability of water" , ylab="posterior probability" )
+mtext( "20 points" )
+
+```
+
+```{r quadratics}
+#quadratics
+require(rethinking)
+
+globe.qa <- quap(
+  alist(
+    W ~ dbinom( W+L ,p) , # binomial likelihood
+    p ~ dunif(0,1) # uniform prior
+  ) ,
+  data=list(W=6,L=3) )
+# display summary of quadratic approximation
+precis( globe.qa )
+
+# mean   sd 5.5% 94.5%
+#p 0.67 0.16 0.42  0.92
+
+```
+Trying to make sense of this.
+Mean is approx probability in previous plot that gives max value
+
+```{r quadcompare}
+w<-which(posterior==max(posterior))
+p_grid[w]
+#sum of posterior = 1, so to find CI need to find when sum is .055 or .945
+cilo <-0
+cihi <-0
+myci <-.055
+i=1
+while(cilo==0){
+  i<-i+1
+  thissum<-sum(posterior[1:i])
+  if(thissum > myci){
+  cilo<- p_grid[i]
+   }
+}
+i=length(posterior)
+while(cihi==0){
+  i<-i-1
+  thissum<-sum(posterior[i:length(posterior)])
+  if(thissum > myci){
+    cihi<- p_grid[i]
+  }
+}
+print(cilo)
+print(cihi)
+```
+
+The lower CI is good match to quadratic estimate - upper CI is lower - may be to do with grain?
+I checked by increasing N points to 100, but that does not help it. Maybe because quadratic is symmetric and likelihood function is not?
+Some discussion of this in the book - reassuring that upper end of curve tends to fit less well in examples he gives.
+
+```{r betacalc}
+# analytical calculation 2.7
+W <- 6
+L <- 3
+curve( dbeta( x , W+1 , L+1 ) , from=0 , to=1 )
+# quadratic approximation
+curve( dnorm( x , 0.67 , 0.16 ) , lty=2 , add=TRUE )
+
+```
+
+
+```{r montecarlo}
+n_samples <- 1000 
+p <- rep( NA , n_samples ) #initialise p vector
+p[1] <- 0.5 #start value for p at .5
+W <- 6
+L <- 3
+for ( i in 2:n_samples ) {
+  p_new <- rnorm( 1 , p[i-1] , 0.1 ) #random p value based on previous p value with small sd
+  if ( p_new < 0 ) p_new <- abs( p_new ) #avoid negative numbers
+  if ( p_new > 1 ) p_new <- 2 - p_new  #avoid numbers > 1
+  q0 <- dbinom( W , W+L , p[i-1] ) #binomial probability for previous p
+  q1 <- dbinom( W , W+L , p_new ) #binomial probability for this p
+  p[i] <- ifelse( runif(1) < q1/q0 , p_new , p[i-1] ) #depends on random prob relative to likelihood of both q values
+#either stick with prior p or take the new one
+  }
+plot(p[1:500],type='l') #DB added to show homing process - values cluster around true p
+#but values are not converging! sd as great for last 100 as first 100
+dens( p , xlim=c(0,1) )
+curve( dbeta( x , W+1 , L+1 ) , lty=2 , add=TRUE )
+
+
+
+```
+
+
+2M3. Suppose there are two globes, one for Earth and one for Mars. The Earth globe is 70% covered in water. The Mars globe is 100% land. Further suppose that one of these globes—you don’t know which—was tossed in the air and produced a “land” observation. Assume that each globe was equally likely to be tossed. Show that the posterior probability that the globe was the Earth, conditional on seeing “land” (Pr(Earth|land)), is 0.23.
+
+Earth prior = .5
+Mars prior = .5
+Land|Earth = .3
+Land|Mars = 1
+What is p(Earth|Land)
+
+pLE <- .3 #Land|Earth = .3
+pE <- .5 #Earth prior = .5
+pL <- .65 = .5 * (Land|earth + Land|mars)
+
+pEL <- pLE*pE/pL
+= 0.2307692
+
+ 2M4. Suppose you have a deck with only three cards. Each card has two sides, and each side is either black or white. One card has two black sides. The second card has one black and one white side. The third card has two white sides. Now suppose all three cards are placed in a bag and shuffled. Someone reaches into the bag and pulls out a card and places it flat on a table. A black side is shown facing up, but you don’t know the color of the side facing down. Show that the probability that the other side is also black is 2/3. Use the counting method (Section 2 of the chapter) to approach this problem. This means counting up the ways that each card could produce the observed data (a black side facing up on the table).
+
+pA <- 0
+pB <- .5
+pC <- 1
+
+Cannot be card A
+ so p of card C is 1/1.5 = 2/3
+
+2M5. Now suppose there are four cards: B/B, B/W, W/W, and another B/B. Again suppose a card is drawn from the bag and a black side appears face up. Again calculate the probability that the other side is black.
+
+Add card D which is B/B
+
+pA<-0
+pB<-.5
+pC<-1
+pD<-1
+
+So need pC or D, which is pC = 1/2.5, pD = 1/2.5 : since they are mutually exclusive is 2/2.5
+Or could compute as not card B: Card B is .5/2.5, so this seems to work. 
+So answer is .8
+
+2M6. Imagine that black ink is heavy, and so cards with black sides are heavier than cards with white sides. As a result, it’s less likely that a card with black sides is pulled from the bag. So again assume there are three cards: B/B, B/W, and W/W. After experimenting a number of times, you conclude that for every way to pull the B/B card from the bag, there are 2 ways to pull the B/W card and 3 ways to pull the W/W card. Again suppose that a card is pulled and a black side appears face up. Show that
+the probability the other side is black is now 0.5. Use the counting method, as before.
+
+Probability of black on single draw
+
+A = 1
+B = .5
+C = 0
+
+differential likelihood of selecting card means in effect we have
+
+A = 1
+B1 = .5
+B2 = .5
+C1 = 0
+C2 = 0
+C3 = 0
+
+probability that other side is black is probability of A relative to A+B1+B2 = .5
+
+2M7. Assume again the original card problem, with a single card showing a black side face up. Before looking at the other side, we draw another card from the bag and lay it face up on the table. The face that is shown on the new card is white. Show that the probability that the first card, the one showing a black side, has black on its other side is now 0.75. Use the counting method, if you can. Hint: Treat this like the sequence of globe tosses, counting all the ways to see each observation, for each possible first card.
+
+3 options for 2 draws
+We are looking for probability of A+B or A+C
+These are all the pairings that could give an initial black and 2nd white
+A+ B  
+B+ C
+A +C
+
+Hm - looks like I have probability of 2/3 rather than .75
+So something wrong - need to take into account prob of black?
+
+A + B  black + white is 1 then .5
+B + C  black then white is .5 then 1
+A + C  black then white is 1 then 1
+
+Ah hah - so if we multiply probls we have .5, .5, 1 for the 3 combinations
+
+So total probs are 2, and the options with A come to 1.5, so 1.5/2 .
+Yes!
+
+2H1. Suppose there are two species of panda bear. Both are equally common in the wild and live in the same places. They look exactly alike and eat the same food, and there is yet no genetic assay capable of telling them apart. They differ however in their family sizes. Species A gives birth to twins 10% of the time, otherwise birthing a single infant. Species B births twins 20% of the time, otherwise birthing singleton infants. Assume these numbers are known with certainty, from many years of field
+research.
+Now suppose you are managing a captive panda breeding program. You have a new female panda of unknown species, and she has just given birth to twins. What is the probability that her next birth will also be twins?
+
+prob (twin|A) = .1
+prob (twin|B) = .2
+
+prob (A|twin) = p (twin|A)* p(A) / p (twin) = (.1 * .55)/.15 = .36
+prob (B|twin) = (.2 * .5)/.15 = .66 
+
+so probability of 2nd cub being twin is .36 * .1 + .66*.2 = .168
+
+2H2. Recall all the facts from the problem above. Now compute the probability that the panda we have is from species A, assuming we have observed only the first birth and that it was twins.
+
+Presumably this is .36/(.36 + .66) = .352
+
+Seems right range - i.e p goes down from prior of .5.
+
+2H3. Continuing on from the previous problem, suppose the same panda mother has a second birth and that it is not twins, but a singleton infant. Compute the posterior probability that this panda is species A.
+
+Prior probability of species A is now .352 rather than .5.
+So same Bayes formula but now:
+
+prob (A|single) = p (single|A)* p(A) / p (single) = .9 * .352/.85 = .372
+
+seems in right ballpark, i.e. p goes up a bit
+
+
+2H4. A common boast of Bayesian statisticians is that Bayesian inference makes it easy to use all of the data, even if the data are of different types.
+So suppose now that a veterinarian comes along who has a new genetic test that she claims can identify the species of our mother panda. But the test, like all tests, is imperfect. This is the information
+you have about the test:
+ The probability it correctly identifies a species A panda is 0.8.
+ The probability it correctly identifies a species B panda is 0.65.
+The vet administers the test to your panda and tells you that the test is positive for species A. First ignore your previous information from the births and compute the posterior probability that your panda is species A. Then redo your calculation, now using the birth data as well
+
+p(testpos|A) = .8
+p(testpos|B) = .65
+(presumably test is not just between A and B?)
+
+p(A|testpos) = p(testpos|A * p(A)/p(testpos))
+
+This is a bit confusing as we haven't been told about sens and spec of the test, and don't know if same test for all pandas? But if we assume p(testpos) is average of .8 and .65, then  we get
+
+p(A|testpos) = .8 * .5 / .725 = .55
+
+Also unclear what is meant by 'the birth data' as this varies from problem to problem, but if we take the most recent problem where p(A) is .372
+
+
+p(A|testpos) = .8 * .372 / .725 = .41
+
+
+
+
+
+
+# Homework from website
+https://github.com/rmcelreath/statrethinking_winter2019/blob/master/homework/week01.pdf
+
+# Homework week 1
+```{r globes}
+#1. Globe tossing, 8 in 15
+
+p_grid <- seq( from=0 , to=1 , length.out=20)
+# define prior
+prior <- rep( 1 , 20 )
+# compute likelihood at each value in grid
+likelihood <- dbinom( 8 , size=15 , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+p1<-plot( p_grid , posterior , type="b" ,
+      xlab="probability of water" , ylab="posterior probability",ylim=c(0,.30) )
+mtext( "20 points" )
+abline(v=.7)
+abline(h=posterior[14],lty=2)
+
+#2 Globe tossing with biased prior
+p_grid <- seq( from=0 , to=1 , length.out=20)
+# define prior
+prior <- ifelse( p_grid < 0.5 , 0 , 1 ) 
+# compute likelihood at each value in grid
+likelihood <- dbinom( 8 , size=15 , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+p2 <- plot( p_grid , posterior , type="b" ,
+      xlab="probability of water" , ylab="posterior probability" ,ylim=c(0,.30) )
+mtext( "20 points" )
+abline(v=.7)
+abline(h=posterior[14],lty=2)
+
+```
+
+Q3. This problem is more open-ended than the others. Feel free to collaborate
+on the solution. Suppose you want to estimate the Earth’s proportion of
+water very precisely. Specifically, you want the 99% percentile interval of the
+posterior distribution of p to be only 0.05 wide. This means the distance between
+the upper and lower bound of the interval should be 0.05. How many
+times will you have to toss the globe to do this? I won’t require a precise
+answer. I’m honestly more interested in your approach.
+
+I'd use simulation! Seems like a power calculation
+Explore various intervals to home in on optimal.
+But have to assume particular value is correct to do this: let's go for .7, with prior excluding values < .5
+Could exclude more than this? Clearly, the prior will make it easier with small N obs.
+
+
+```{r Q3_week1}
+truep <- .7
+allN <- seq(25,500,25) #sample sizes to test
+lengthN <- length(allN)
+myresults<-data.frame(matrix(NA,nrow=lengthN,ncol=6))
+colnames(myresults) <- c('N','mean','sd','lowCI','hiCI','diff')
+thisrow <- 0
+for (myn in allN){
+  thisrow <- thisrow+1
+  W <- round(myn*truep,0)
+  L <- myn - W
+globe.qa <- quap(
+  alist(
+    W ~ dbinom( myn ,p) , # binomial likelihood
+    p ~ dunif(0,1) # uniform prior
+  ) ,
+  data=list(W=W,L=L) )
+# display summary of quadratic approximation
+myprec <- precis( globe.qa )
+myresults[thisrow,2:5] <- myprec
+myresults[thisrow,1]<-myn
+myresults[thisrow,6] <- myprec[4]-myprec[3]
+}
+```
+This gives the required table for output, but the precis gives wrong CI - not sure how to adjust for 99 percentile.
+
+And when I changed the range of N to include much bigger, it crashed.
+
+Also, attempt to change the prior to
+
+      p ~ ifelse( runif(1) < 0.5 , 0 , 1 ) 
+    
+Led to weird error: Error in rfelse
+
+So I'm still pretty confused by quap, but pleased I got as far as this....
+
+```{r gridapproach}
+#2 Globe tossing with biased prior, using grid
+p_grid <- seq( from=0 , to=1 , length.out=100)
+# define prior
+prior <- ifelse( p_grid < 0.5 , 0 , 1 ) 
+
+for (numtries in seq(1000,2000,100)){
+# compute likelihood at each value in grid
+likelihood <- dbinom( .7*numtries , size=numtries , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+myhead <- paste0('N tries = ',numtries)
+p2 <- plot( p_grid , posterior , type="l" ,
+      xlab="probability of water" , ylab="posterior probability" ,ylim=c(0,.50),main=myhead )
+
+abline(v=.7,col='red')
+
+}
+
+```
+
