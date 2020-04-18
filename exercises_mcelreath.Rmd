@@ -48,7 +48,8 @@ precis( globe.qa )
 
 ```
 Trying to make sense of this.
-Mean is approx probability in previous plot that gives max value
+Mean is approx probability in previous plot that gives max value.
+In next chunk I try to check out the CIs
 
 ```{r quadcompare}
 w<-which(posterior==max(posterior))
@@ -364,4 +365,196 @@ abline(v=.7,col='red')
 }
 
 ```
+# Chapter 3
 
+code 3.2- onward
+
+I was unsure about  meaning of 'bandwidth' so the code is tweaked to change sample size.
+This confirms that bandwidth goes down with sample size, but it is still unclear exactly what it is.
+
+```{r code3.2}
+require(rethinking)
+p_grid <- seq( from=0 , to=1 , length.out=1000 )
+prob_p <- rep( 1 , 1000 )
+prob_data <- dbinom( 6 , size=9 , prob=p_grid )
+posterior <- prob_data * prob_p
+posterior <- posterior / sum(posterior)
+#modifying script to check meaning of bandwidth
+for (b in c(100,1000,10000)){
+samples <- sample( p_grid , prob=posterior , size=b , replace=TRUE )
+dens(samples)
+}
+
+```
+
+Turned to Google, which gives me this
+https://stats.stackexchange.com/questions/61374/what-does-bandwidth-mean
+
+**The bandwidth is a measure of how closely you want the density to match the distribution.
+
+See help(density):
+
+    bw the smoothing bandwidth to be used. The kernels are scaled such that this is the standard deviation of the smoothing kernel. (Note this differs from the reference books cited below, and from S-PLUS.)
+
+See also
+
+    adjust the bandwidth used is actually adjust*bw. This makes it easy to specify values like ‘half the default’ bandwidth.**
+    
+Still unsure, since I don't understand kernel, and the help for density is no help!
+But below is the chunk given with example.
+
+Basically, the higher the bandwidth, the more smoothing applied to the plot.
+Can think of it like filtering a signal - just related to the bin size over which pts are averaged.
+
+
+```{r bandwidth}
+set.seed(201010)
+x <- rnorm(1000, 10, 2)
+par(mfrow = c(2,2))
+plot(density(x))  #A bit bumpy - so I guess this is the default bandwidth computed in r
+plot(density(x,adjust = 10)) #Very smmoth
+plot(density(x,adjust = .1)) #crazy bumpy
+
+
+```
+ Next goes on to consider how to compute intervals by sampling from distribution.
+ Prefers 'compatibility interval' to confidence or credibility (argh, another term is not going to really help)
+ 
+ This is 3/3 in a binomial test with unbiased prior 
+ 
+```{r intervals} 
+ p_grid <- seq( from=0 , to=1 , length.out=1000 )
+prior <- rep(1,1000)
+likelihood <- dbinom( 3 , size=3 , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+samples <- sample( p_grid , size=1e4 , replace=TRUE , prob=posterior )
+#this means you are sampling FROM pgrid a total of 10000 values without replacement, with a probability that relates to the posterior. So for each sample, you use the posterior relating to the p_grid. !!!
+
+hist(samples) #I added this - shows most at 1
+
+PI( samples , prob=0.5 ) #PI is part of 'rethinking' package, gives percentile intervals
+#these use quantile and assign equal mass to each tail - ie this is middle 50%
+
+#DB: If we change the value of prob, we get interval still centred at same point, but narrower if prob is smaller
+PI(samples,prob=.3)
+
+
+
+```
+
+HPDI is different from PI. It is the narrowest interval containing the specified
+probability mass. If you think about it, there must be an infinite number of posterior intervals
+with the same mass. But if you want an interval that best represents the parameter values
+most consistent with the data, then you want the densest of these intervals. That’s what the
+HPDI is. Compute it from the samples with HPDI (also part of rethinking):
+
+```{r hpdi}
+HPDI(samples,prob=.5)
+HPDI(samples,prob=.3)
+HPDI(samples,prob=.95)
+```
+
+Yup, this makes sense, esp if you include the plots (need to check code)
+Code from version 1 of book is here
+https://bookdown.org/content/3890/sampling-the-imaginary.html#sampling-from-a-grid-like-approximate-posterior
+
+This code below is useful training in tidyverse, and also shows how geom_ribbon can be used to colour part of a density function. I will next see if I can do that for the code above!
+
+```{r densplots}
+# how many grid points would you like?
+n <- 1001
+n_success <- 6
+n_trials  <- 9
+
+(
+  d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = n),
+         # note we're still using a flat uniform prior
+         prior  = 1) %>% 
+  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) %>% 
+  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+)  #DB behaves like a dataframe and has 4 cols which are p_grid, prior, likelihood and posterior
+
+# how many samples would you like?
+n_samples <- 1e4
+
+# make it reproducible
+set.seed(3)
+
+samples <-
+  d %>% 
+  sample_n(size = n_samples, weight = posterior, replace = T)
+
+glimpse(samples)
+samples %>% 
+  mutate(sample_number = 1:n()) %>%   #n here seems to pick up number of rows - I tried resetting and got error saying that sample_number must be length of N rows
+  
+  ggplot(aes(x = sample_number, y = p_grid)) +
+  geom_line(size = 1/10) +
+  scale_y_continuous("proportion of water (p)", limits = c(0, 1)) +
+  xlab("sample number")
+
+samples %>%  #this just means 'using the data from samples....'
+  ggplot(aes(x = p_grid)) +
+  geom_density(fill = "black") +
+  scale_x_continuous("proportion of water (p)", limits = c(0, 1)) 
+d %>% 
+  sample_n(size = 1e6, weight = posterior, replace = T) %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_density(fill = "black") +
+  scale_x_continuous("proportion of water (p)", limits = c(0, 1))
+
+p1 <-
+  d %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_line(aes(y = posterior)) +
+  geom_ribbon(data = d %>% filter(p_grid < .5),
+              aes(ymin = 0, ymax = posterior)) +
+  labs(x = "proportion of water (p)",
+       y = "density")
+
+```
+
+
+My attempt to apply geom_ribbon to my original data
+
+```{r useribbon}
+
+
+# Generate data
+
+mynrow <- 1000
+p_grid <- seq( from=0 , to=1 , length.out=mynrow )
+prior <- rep(1,mynrow)
+likelihood <- dbinom( 8 , size=9 , prob=p_grid )
+posterior <- likelihood * prior
+
+nsample=100
+rownumber<-1:mynrow
+mysample <- sample(rownumber,nsample,prob=posterior)
+
+
+mydf <- data.frame(cbind(p_grid[mysample],posterior[mysample]))
+colnames(mydf)<-c('p_grid','posterior')
+
+plot(mydf$p_grid,mydf$posterior)
+
+myrange <- PI(mydf$p_grid , prob=0.5 ) #PI is part of 'rethinking' package, gives percentile intervals
+#these use quantile and assign equal mass to each tail - ie this is middle 50%
+
+myrange2 <- HPDI(mydf$p_grid,prob=.5)
+
+  mydf %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_line(aes(y = posterior)) +
+  geom_ribbon(data = mydf%>% filter( p_grid<myrange[2],p_grid>myrange[1]),
+              aes(ymin = 0, ymax =posterior),fill='lightblue') +
+      geom_ribbon(data = mydf%>% filter( p_grid<myrange2[2],p_grid>myrange2[1]),
+              aes(ymin = 0, ymax =posterior),fill='darkblue') +
+  labs(x = "proportion of water (p)",
+       y = "density")
+  
+```
+
+Phew!
