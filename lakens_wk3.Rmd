@@ -1,0 +1,93 @@
+---
+title: "lakens wk3"
+author: "DVM Bishop"
+date: "04/05/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Alpha levels
+
+Why is 5 sigma equivalent to .0000003?
+
+Is this just the p-value when a z-score = 5?
+Yes! Answer is 2.866516e-07
+```{r sigma}
+z <- 5
+ 
+1-pnorm(z)
+
+
+```
+
+## P-values and ANOVA
+see also http://deevybee.blogspot.com/2013/06/interpreting-unexpected-significant.html
+
+Why do you get that weird distribution of p-values if you use Bonferroni correction?
+
+Suppose you have 4 measures, and you set overall p-value to .05, so for each test, p is .0125.
+Alternative is to multiply each p-value by n tests.
+I was *very* confused by this, because this gives p-values > 1!
+However, I then found that all you do is to censor values at 1, so anything bigger than one is treated as one. This is just what the p.adjust method in stats package does!
+
+```{r bonfdist}
+#so for each test, p is just selected at random from 0 to 1.
+#And we then multiply each p-value by 4
+
+#make a vector of N p-values selected at random
+N  <- 10
+pN <- runif(N)
+pN
+#multiply them by n values
+pN*N
+#now use p.adjust for same values
+p.adjust(pN,method='bonferroni')
+
+
+require(stats)
+allp<-vector() #initialise vector
+allph<-allp #copy it so we can compare holm method
+for (i in 1:1000){
+  p4<-p.adjust(runif(4),method='bonferroni')
+  p4h <- p.adjust(runif(4),method='holm')
+  allp <- c(allp, p4)
+  allph <- c(allph,p4h)
+}
+hist(allp)
+hist(allph)
+
+```
+
+How does he get that weird plot illustrating optional stopping?
+I guess if you simulated a 2-group difference when real null effect, you could do for 2 v big groups (e.g. 500) with a 'look' after each 100, retaining p-value if sig but not otherwise?
+Yup. Chunk below does it.
+I also tried varying total sample size - same basic effect each time
+
+```{r optstop}
+nsim <- 1000 #N simulations
+totsamplesize <- 5000
+
+allp<-vector() #initialise to hold selected p-value on each run
+for (i in 1:nsim){
+alldata<-rnorm(totsamplesize,0,1) #500 subs in group A
+alldatb <- rnorm(totsamplesize,0,1) #500 subs in group B
+  thisp<-1
+for (j in 1:5){ 
+
+  lastrow <- j*(totsamplesize/5)
+  myp<-t.test(alldata[1:lastrow],alldatb[1:lastrow])$p.value
+  if(myp<.05){thisp<-myp}
+}
+  if(thisp==1){thisp <-myp} #take last value if none is <.05
+
+{allp<-c(allp,thisp)
+}
+}
+hist(allp,breaks=20)
+
+
+
+```
