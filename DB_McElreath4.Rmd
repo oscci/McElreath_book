@@ -14,7 +14,7 @@ require(tidyverse)
 ## Chapter 4
 
 McElreath compares linear regression to Ptolemy's thinking about the universe. Quite clever: jolts you into realising that any method we use is just a model.
-That's a core message of this book: don't apply stats formulaicly thinking it will give you the true - need to understand limitations/assumptions of models.
+That's a core message of this book: don't apply stats formulaicly thinking it will give you the truth - need to understand limitations/assumptions of models.
 Reminder of George Box quote:  "All models are wrong, but some are useful".
 
 ## 4.1 Why normal distributions are normal
@@ -24,8 +24,10 @@ Illustrates how repeated sampling from binomial leads to normal distribution if 
 pos <- replicate( 1000 , sum( runif(16,-1,1) ) )
 hist(pos) 
 # runif means select a random uniform number. runif(16) selects 16 random uniform numbers.
-# Default is value from 0 to 1 - not sure why M complicates it, but he's specified range from -1 to 1  : I guess so mean is zero
-#Qu; what would you expect mean to be if we just used runif(16)?
+# Default is value from 0 to 1 - not sure why M complicates it, but he's specified range from -1 to 1  : I guess he does that to ensure mean is zero
+
+#Check: what would mean be if we just used runif(16)?
+
 posb <- replicate( 1000 , sum( runif(16 ) ))
 hist(posb)
 plot(density(posb))
@@ -185,6 +187,7 @@ Yes!!
 Also works if range extends beyond N points
 max(dunif(p_grid,0,2)) = .5
 equivalent to 100/(2*100) - which is actually just 1/(max-min)
+(doh!)
 
 So simple description of dunif:
 For values outside range of min,max, it returns zero
@@ -195,8 +198,7 @@ For values inside rnage of min,max it returns 1/(max-min)
 Now back to McElreath....
 # Gaussian model of height
 
-Basic logic: There are an infinite number of possible Gaussian distributions. Some have small means. Others have large means. Some are wide, with a large SD. Others are narrow. We want our Bayesian machine to consider every possible distribution, each defined by a combination of mean and SD and rank them by posterior plausibility. Posterior
-plausibility provides a measure of the logical compatibility of each possible distribution with the data and model.
+Basic logic: There are an infinite number of possible Gaussian distributions. Some have small means. Others have large means. Some are wide, with a large SD. Others are narrow. We want our Bayesian machine to consider every possible distribution, each defined by a combination of mean and SD and rank them by posterior plausibility. Posterior plausibility provides a measure of the logical compatibility of each possible distribution with the data and model.
 
 NB the “estimate” here will be the entire posterior distribution, not any point within it.
 
@@ -211,7 +213,7 @@ myd2 <- myd[ myd$age >= 18 , ] #select those aged over 17
 
 #NB when first learning R, I found it helpful to break a command like this into 2 steps to make it very clear what the code was doing.
 
-i.e. 
+#i.e. 
 w <- which(myd$age >= 18) #if you inspect w, you see it's a list of rownumbers for cases with age >=18
 myd2 <- myd[w,] #now select from myd those with the same rows as w
 
@@ -225,7 +227,7 @@ curve( dnorm( x , 178 , 20 ) , from=100 , to=250 )
 #NB I like the way he explains he uses prior knowledge of human height here - wouldn't use uniform prior as we already know aspects of height.
 curve( dunif( x , 0 , 50 ) , from=-10 , to=60 ) #prior for SD - this is flat between reasonable range
 
-#Now plot height distribution from prior (4.14)
+#Now plot height distribution from prior (code R4.14)
 sample_mu <- rnorm( 1e4 , 178 , 20 ) 
 sample_sigma <- runif( 1e4 , 0 , 50 )
 prior_h <- rnorm( 1e4 , sample_mu , sample_sigma )
@@ -243,7 +245,7 @@ N.B. *Prior predictive simulation is very useful for assigning sensible priors*
 ## 4.3.3. Grid approximation of the posterior distribution.
 (M notes code is hard to follow and we shouldn't worry...)
 ```{r code4.16}
-#below I changed d2 to myd2 in line 252
+#below I changed d2 to myd2 in line 255
 mu.list <- seq( from=150, to=160 , length.out=100 )  #length.out is new to me but useful - ensures you get desired N points from the seq command (here 100 , not 101)
 sigma.list <- seq( from=7 , to=9 , length.out=100 )
 post <- expand.grid( mu=mu.list , sigma=sigma.list ) #every combination of mu.list and sigmal.list
@@ -306,7 +308,7 @@ posteriori estimate (MAP), and we can get a useful image of the posterior’s sh
 To build the quadratic approximation, we’ll use quap.
 
 NB using alist - explained later:
-The two functions alist and list do the same basic thing: allow you to make a collection of arbitrary R objects. They differ in one important respect: list evaluates the code you embed inside it, while alist does not. So when you define a list of formulas, you should use alist, so the code isn’t executed.
+"The two functions alist and list do the same basic thing: allow you to make a collection of arbitrary R objects. They differ in one important respect: list evaluates the code you embed inside it, while alist does not. So when you define a list of formulas, you should use alist, so the code isn’t executed.""
 But when you define a list of start values for parameters, you should use list, so that code like mean(d2$height) will be evaluated to a numeric value.
 
 ```{r quap.intro}
@@ -318,7 +320,7 @@ d2 <- myd[ myd$age >= 18 , ]
 #Create a list of formulae
 flist <- alist(
 height ~ dnorm( mu , sigma ) ,
-mu ~ dnorm( 178 , 20 ) ,
+mu ~ dnorm( 190 , 20 ) ,
 sigma ~ dunif( 0 , 50 )
 )
 
@@ -374,12 +376,74 @@ head(post)
 precis(post)
 
 ```
+## Diversion for exercises
 
+4E1 - likelihood is the y function: the one whose terms are variables - the other element of the model specify what values the variables take.
+
+4E2 - I *think* the answer is 2 : mean and sd
+
+4E3. "Using the model definition above, write down the appropriate form of Bayes’ theorem that
+includes the proper likelihood and priors"
+? So this is something like the formula at bottom of p 80?
+OOH THIS IS HARD
+I'm going to have to use M and S for observed values and m and s for the mu and sigma
+So I guess left hand side is probability of a given m and s when observed is M and S, so 
+
+Left-hand side: Pr(m,s | height)
+Right-hand side: Normal(height |m,s )
+
+
+
+Prior - I assume this is easy as we just adopt uniform prior as before.
+
+4E4 - line 2 looks familiar as a linear model to me!
+
+4E5. In the model definition just above, how many parameters are in the posterior distribution?
+I think 3 - a, b, and s
+
+4M1.  For the model definition below, simulate observed y values from the prior (not the posterior).
+yi ~ Normal(m,s)
+m ~ Normal(0, 10)
+s ~ Exponential(1)
+
+see p 84-85.
+
+```{r simprior}
+sample_mu <- rnorm(1e4,0,10)
+#sample_sigma <- exp(1) #?  no variation in sigma? - should we take exp of a runif?
+#found this on simulation of random exponential https://rpubs.com/rsshalini/109890
+sample_sigma <- rexp(1e4,1)
+prior_h <-rnorm(1e4,sample_mu,sample_sigma)
+dens(prior_h)
+
+```
+4M2. Translate the model just above into a quap formula.
+Im very confused here, but my effort is below
+```{r task4M2}
+#based on rcode 4.31
+#all seems OK until we get to data.
+#So data here is simulated data? Needs a data frame
+
+#Just make random data for y?
+mydf <- data.frame(matrix(NA,nrow=100,ncol=2))
+colnames(mydf) <- c('x','y')
+mydf$x<- runif(100)
+mydf$y <- rnorm(100,0,10)
+
+quap(
+alist(
+  y <- dnorm(mu,sigma),
+  mu ~ dnorm(0,10),
+  sigma <- dexp(1)),
+data=mydf)
+
+
+```
 
 
 # 4.4 Linear prediction
 
-Will look at wt as predictor of ht (seems odd way around...)
+Will look at wt as predictor of ht (seems odd way around, given that weight seems more dependent on environment...)
 
 ```{r htwt}
 plot( d2$height ~ d2$weight )
@@ -390,7 +454,7 @@ Now look at predicting with linear model
 set.seed(2971)
 N <- 100 # 100 lines
 a <- rnorm( N , 178 , 20 )
-b <- rnorm( N , 0 , 10 ) #mean 0 , SD 10, can be -ve
+b <- rnorm( N , 0 , 10 ) #slope has mean 0 , SD 10, can be -ve
 plot( NULL , xlim=range(d2$weight) , ylim=c(-100,400) ,
 xlab="weight" , ylab="height" )
 abline( h=0 , lty=2 )
@@ -411,13 +475,13 @@ b <- rlnorm( 1e4 , 0 , 1 ) #4.40
 dens( b , xlim=c(0,5) , adj=0.1 )
 
 #Now use this as prior
-set.seed(2971) 4.41
+set.seed(2971) 
 N <- 100 # 100 lines
 a <- rnorm( N , 178 , 20 )
 b <- rlnorm( N , 0 , 1 )
 dens( b , xlim=c(0,5) , adj=0.1 )
 
-plot( NULL , xlim=range(d2$weight) , ylim=c(-100,400) ,
+plot( NULL , xlim=range(d2$weight) , ylim=c(-100,400) , #rcode 4.39
 xlab="weight" , ylab="height" )
 abline( h=0 , lty=2 )
 abline( h=272 , lty=1 , lwd=0.5 )
@@ -428,27 +492,92 @@ col=col.alpha("black",0.2) )
 ```
 
 Notes re priors and p-hacking.
-The problem is that when the model is adjusted
-in light of the observed data, then p-values no longer retain their original meaning. False results are to be expected. We don’t pay any attention to p-values in this book. But the danger remains, if we
-choose our priors conditional on the observed sample, just to get some desired result. The procedure we’ve performed in this chapter is to choose priors conditional on pre-data knowledge of the data— its constraints, ranges, and theoretical relationships. This is why the actual data are not shown in the earlier section. We are judging our priors against general facts, not the sample.
+The problem is that when the model is adjusted in light of the observed data, then p-values no longer retain their original meaning. False results are to be expected. We don’t pay any attention to p-values in this book. But the danger remains, if we choose our priors conditional on the observed sample, just to get some desired result. The procedure we’ve performed in this chapter is to choose priors conditional on pre-data knowledge of the data— its constraints, ranges, and theoretical relationships. This is why the actual data are not shown in the earlier section. We are judging our priors against general facts, not the sample.
 
-```{r 4.42}
-# define the average weight, x-bar
-xbar <- mean(d2$weight)
-# fit model
-#mu is no longer a parameter, since it has become a function of the parameters a and b.
 
-m4.3 <- quap(
-alist(
-height ~ dnorm( mu , sigma ) ,
-mu <- a + b*( weight - xbar ) ,
+
+## Digression - lists
+I've never really got seriously to grips with lists.
+Now is the time to understand them better.
+Here's what M says about them:
+'The two functions alist and list do the same basic thing: allow you to make a collection of arbitrary R objects. They differ in one important respect: list evaluates the code you embed inside it, while alist does not. So when you define a list of formulas, you should use alist, so the code isn’t executed.
+But when you define a list of start values for parameters, you should use list, so that code like mean(d2$height) will be evaluated to a numeric value.'
+
+Still feeling hazy so will make a toy example.
+
+```{r toylists_ignore this}
+#Just for posterity - my failed attempt to understand alist in this chunk. 
+
+#I am OK with having a formula specified for use in lm
+myf <- formula(height~weight)
+lm(myf,data=d2)
+
+#But list doesnt work like that
+# This doesn't work
+myalist <- alist(height~weight)
+lm(myalist,data=d2) 
+
+# How about testing with mvrnorm, which needs several arguments
+
+mlist <- list(
+  n = 10,
+  mu = c(0,0),
+  Sigma = matrix(c(1,0,0,1),nrow=2)
+)
+mvrnorm(mlist)
+#Nope. This gets: 
+#Error in mvrnorm(mylist) : argument "mu" is missing, with no default
+
+mylist <- list(
 a ~ dnorm( 178 , 20 ) ,
 b ~ dlnorm( 0 , 1 ) ,
 sigma ~ dunif( 0 , 50 )
-) ,
-data=d2 )
+)
 
-summary(m4.3)
+mean(mylist[[1]])
+
+```
+
+```{r milan_lists}
+# Milan to the rescue!
+# Basic expression evaluation example ----# Create 'list' with some expressions
+expressions_list <- list(
+  1 + 1,
+  1 / 5
+  )# Look at expressions
+# Here expressions get evaluated
+expressions_list
+# Create 'alist' with some expressions
+expressions_alist <- alist(
+  1 + 1,
+  1 / 5
+  )
+# Look at expressions
+# Here we actually see the expressions
+# I think it's called 'defusing' the expression
+expressions_alist
+
+# Regression example ----# Create 'list' with some lm formulas
+lm_formulas_list <- list(
+  mpg ~ cyl,
+  mpg ~ cyl + disp
+  )
+
+# Run regressions, this could also be in a loop or apply function
+# This seems to work fine
+lm(lm_formulas_list[[1]], data = mtcars)
+lm(lm_formulas_list[[2]], data = mtcars)
+
+# Create 'alist' with some lm formulas
+lm_formulas_alist <- alist(
+  mpg ~ cyl,
+  mpg ~ cyl + disp
+  )
+
+# Run regressions, this could also be in a loop or apply function
+# This also seems to work fine, no difference to 'list'
+lm(lm_formulas_alist[[1]], data = mtcars)
+lm(lm_formulas_alist[[2]], data = mtcars)
 ```
 
 Use of logarithms /exponentials
@@ -483,13 +612,17 @@ between outcome and predictor
 ## 4.4.3.2. Plotting posterior inference against the data.
 
 ```{r 4.46}
-plot( height ~ weight , data=d2 , col=rangi2 ) 
+plot( height ~ weight , data=d2 , col=rangi2 ) #scatterplot
 post <- extract.samples( m4.3 )
-a_map <- mean(post$a)
-b_map <- mean(post$b)
-curve( a_map + b_map*(x - xbar) , add=TRUE )
+a_map <- mean(post$a) #154.6
+b_map <- mean(post$b) #.903
+curve( a_map + b_map*(x - xbar) , add=TRUE ) #x is vector of x values; this just plots regression line from formula. add=TRUE means add to scatterplot
+#this is just best fitting line
 
-N <- 10 #4.48
+#can see range of lines generated in posterior with
+#extract.sample(m4.3) - this has 10000 rows, each with a, b and sigma
+
+N <- 10 # code 4.48
 dN <- d2[ 1:N , ]
 mN <- quap(
 alist(
@@ -529,9 +662,16 @@ PI( mu_at_50 , prob=0.89 )
 #But need for all possible weights - ie need link function
 
 mu <- link( m4.3 )
+#this gives matrix 1000 x 352; default is 1000 samples; 352 columns, one for each case in original data; so we have a posterior distribution
 str(mu)
 dens(mu) #distribution of mu for each individual in the original data.
 
+#what does this look like for individual Ss?
+#pick the first few
+dens(mu[,1])
+for (i in 2:40){
+  dens(mu[,i],add=T)
+}
 #We need distribution of my for each unique weight value on the horizontal axis. So create weight_seq
 
 #4.54 # define sequence of weights to compute predictions for
@@ -573,12 +713,232 @@ To summarize, here’s the recipe for generating predictions and intervals from 
 #4.58 
 # Struggling with this...
 post <- extract.samples(m4.3)
+#post contains matrix of 10000 estimates of a, b and sigma
 mu.link <- function(weight) post$a + post$b*( weight - xbar )
+#xbar is mean - previously computed as 44.99
+#so mu.link subtracts any value of weight from mean, multiplies by value of b and adds a
 
 weight.seq <- seq( from=25 , to=70 , by=1 )
-mu <- sapply( weight.seq , mu.link )
-mu.mean <- apply( mu , 2 , mean )
-mu.HPDI <- apply( mu , 2 , HPDI , prob=0.89 )
+mu <- sapply( weight.seq , mu.link ) #for each row of mu.link apply the formula for all the wts in range
+mu.mean <- apply( mu , 2 , mean ) #find the mean for all the esimates
+mu.HPDI <- apply( mu , 2 , HPDI , prob=0.89 ) #find the HPDI for all the estimates
 
 
 ```
+The syntax is what is difficult for me: the idea you make a function this way, so let's try and make sense of it.
+
+```{r linkfunctsimple}
+#try analogous formula with v simple algebra
+
+myfunc <- function(weight) 3+2*weight #double weight and add 3
+weight.seq <- seq( from=25 , to=70 , by=5 ) #25,30,35 ...etc
+weight.seq
+myout <- sapply(weight.seq,myfunc) #yes, this doubles weight and adds 3!
+myout
+
+#but in e.g. above, because formula contains reference to post$a and post$b, it is applied to all the rows in post
+
+
+```
+
+4.4.3.5 Prediction intervals
+We got prediction interval for average height,but can get for the actual observed heights. For thsi we need the sd and its uncertainty.
+
+```{r R4.59}
+sim.height <- sim(m4.3,data=list(weight=weight.seq))
+str(sim.height) #1000 rows and 46 columns
+height.PI <- apply(sim.height,2,PI,prob=.89)
+
+#plot raw data
+plot(height~ weight, d2, col=col.alpha(rangi2,0.5)) 
+# draw MAP line
+lines(weight.seq,mu.mean)
+shade(mu.HPDI,weight.seq) #HPDI region for line
+
+shade(height.PI,weight.seq) #PI region for simulated heights
+
+```
+Narrow shaded interval around line is distribution of mu.
+Wider shaded region represents region within which model expects to find 89% of actual heights, at each weight.
+
+!!!!! 
+
+Illustrates distinction between uncertainty in parameter values, and uncertainty in sampling process.
+
+```{r R4.63}
+post <- extract.samples(m4.3)
+weight.seq <- 25:70
+sim.height <- sapply(weight.seq,function(weight)
+  rnorm(
+    n=nrow(post),
+    mean=post$a+post$b*(weight-xbar),
+    sd=post$sigma))
+height.PI <- apply(sim.height,2,PI,prob=.89)
+ 
+
+```
+
+4.5 Curves from lines
+
+```{r R4.64}
+library(rethinking)
+data(Howell1)
+d <- Howell1
+str(d)
+plot(d$weight,d$height)
+```
+```{r R4.65}
+d$weight_s <- (d$weight-mean(d$weight))/sd(d$weight) #makes into zscore
+d$weight_s2 <- d$weight_s^2
+m4.5 <- quap(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <- a  + b1*weight_s + b2*weight_s2,
+    a ~ dnorm(178, 20),
+    b1 ~ dlnorm(0,1),
+    b2 ~ dnorm(0,1),
+    sigma ~ dunif(0,50)
+  ),
+  data=d)
+precis(m4.5)
+
+```
+## Dorothy interim comment
+At this point, I'm trying to take stock of how this appoach compares with traditional non-Bayesian null hypothesis significance testing.
+If we take simple linear regression, with NHST you are typically just asking whether there is a 'significant' relationship between two variables, X and Y. You do that by estimating the best-fitting line where Y = a + bX, and then test if b is significantly different from zero.  That depends both on the gradient of the slope and the standard error of the estimate, and the latter in turn will be influenced by the sample size, and the spread of Y-values. 
+The question revolves around what is the probability of the observed data, given the null hypothesis, p(D|H.)
+
+In the Bayesian approach, you are interested in the relative likelihood of a hypothesis of interest, H1, relative to another hypothesis (typically H0), given the data. So you need to compute the likelihood function for H1 and H2, so you can compare them. That requires you to specify H1 - and that means specifying not only the model (Y  = a + bX, for a linear model), but also the prior estimates of the model parameters. The formula in 4.4.2 specifies all of this, and the quap function takes that formula and does all the computation for you.
+
+This is from quap help: 'The point estimates returned correspond to a maximum a posterior, or MAP, estimate. However the intention is that users will use extract.samples and other functions to work with the full posterior.'
+
+Will recap this with the linear case (I haven't done much with polynomials here as I think I do understand them, having worked a lot with them in regular regression).
+
+
+
+```{r 4.42}
+library(rethinking)
+data(Howell1)
+d <- Howell1
+d2 <- d[d$age >= 18,] #select those aged > 18
+
+plot(d2$weight,d2$height)
+# define the average weight, x-bar
+xbar <- mean(d2$weight)
+# fit model
+#mu is no longer a parameter, since it has become a function of the parameters a and b.
+
+m4.3 <- quap(
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b*( weight - xbar ) ,
+a ~ dnorm( 178 , 20 ) ,
+b ~ dlnorm( 0 , 1 ) ,
+sigma ~ dunif( 0 , 50 )
+) ,
+data=d2 )
+
+#Just checking what this gives us
+plot(d2$weight,d2$height)
+summary(m4.3) #estimates of intercept and slope of the function, and interval around these
+              #estimate of sd and its confidence interval (seems same as precis)
+#We can also inspect covariance between the things we have estimated
+vcov(m4,3) #looks awful so better if you round it to 3 places as in code 4.45
+
+#We can also extract samples - I'll use head to just display first few rows, as it defaults to sampling 10000
+head(extract.samples(m4.3)) #we have 10000 rows, each with posterior estimated a, b and sigma
+#in code 4.46, the mean of the posterior a and b estimates is plugged in to plot the posterior line.
+
+#We can also get the link function for pre-existing data
+mywts <- data.frame(weight=25:75) #this is just a single column 'weight' with weights between 25 and 75 - NB the range here goes beyond what is seen in the data
+mylink <- link(m4.3,mywts) #look at head of the link function
+dim(mylink) #confirms we have 1000 rows and 51 columns. 
+#The 1000 rows are probabilities so we can plot the density function for each weight
+#Just try a few here for display
+dens(mylink[,1],xlab='predicted height from link',main='weight=25')
+dens(mylink[,10],xlab='predicted height from link',main='weight=34')
+dens(mylink[,50],xlab='predicted height from link',main='weight=74')
+
+#You can also use sim to simulate data
+mysim <- sim(m4.3,mywts)
+dim(mysim) #we have 1000 rows and 51 columns
+#Comparing mysim and mylink - can see both have same dimensions, but simulated data is much noisier. For link function, each col has higher value with small variation; for sim , more variation
+head(mylink[,1:6])
+head(mysim[,1:6])
+
+
+```
+
+## Splines
+Splines build up wiggly functions from simpler less-wiggly components called basis functions.
+
+```{r R4.72}
+library(rethinking)
+data("cherry_blossoms")
+d<-cherry_blossoms
+precis(d)
+plot(d$year,d$temp,type='l') #plot as line graph
+```
+
+Splines different from polynomials - don't transform the predictor directly; rather generate synthetic predictors, each of which turns a parameter on or off within a range of the predictor.
+Each of these variables is a basis function.
+Model looks similar to polynomial, but with series of basis functions
+
+How to generate basis functions. Divide horiz axis into parts using pivot points called knots.
+E.g. divide into 4 year ranges using 5 knots.
+B variables in formula gently transition from one part to the next - variables tell which knot you are close to.
+So at start of function, basis function 1 has value 1 and all others are zero.
+Then as move across, 1 declines and 2 increases, etc.
+Influnce of each parameter is quite local
+At any point, only two basis functions have nonzero values.
+Weights for each function obtained by fitting model to data.
+
+```{r R4.73}
+#setting knots
+#can specify as quantiles
+d2 <- d[complete.cases(d$temp),] #just include complete case
+num_knots <- 4 #I changed this from 15 to see the effect
+knot_list <- quantile(d2$year, probs=seq(0,1,length.out=num_knots))
+knot_list
+
+#R4.74
+library(splines)
+B <- bs(d2$year,
+        knots = knot_list[-c(1,num_knots)], #this is the kind of thing that I wish he wouldn't do : just cuts off first and last knot, but needs explaining more!
+        degree = 3, intercept=TRUE)
+dim(B)
+head(B)
+plot(B[,1])
+for (i in 2:num_knots){
+lines(B[,i])
+}
+```
+
+
+```{r R4.76}
+m4.7 <- quap(
+  alist(
+    T ~ dnorm(mu,sigma),
+    mu <- a + B %*% w, #that looks like matrix calculation...
+    a ~ dnorm(6,10),
+    w ~ dnorm(0,1),
+    sigma ~ dexp(1)
+  ),
+  data=list(T=d2$temp,B=B),
+  start=list(w=rep(0,ncol(B)))
+    
+  )
+precis(m4.7)
+mywts <- precis(m4.7,depth=2) #contains weight estimates as well
+
+#R4.78
+mu <- link(m4.7)
+dim(mu) #1000 x 1124 dimension matrix!
+
+head(mu[,1:10]) #check head of first 10 cols
+
+mu_PI <- apply(mu,2,PI,.97) #compute 97% PI for columns (index 2)
+plot(d2$year,d2$temp,col=col.alpha(rangi2,.3),pch=16) #pch determines symbol type
+shade(mu_PI,d2$year,col=col.alpha("black",.5))
+```
+
