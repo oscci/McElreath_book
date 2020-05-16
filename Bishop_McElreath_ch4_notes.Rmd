@@ -11,11 +11,17 @@ https://github.com/oscci/McElreath_book
 
 In our discussions, this chapter was challenging. Does help to also view lectures 3-4 which cover the same material. 
 
+NB This is a Notebook file. You can run each chunk by just clicking on the little green arrow in top right of chunk window. And you can view the output by clicking the Preview option on the bar at the top. This shows the html output in a separate pane.
+Also allows you to include mathematical notation in the text.
+
 Sequence here largely follows the book; I try to add more commentary - both explaining the code, as far as I understand it. Other thing is to be clear about what the graphs are showing - often we found this confusing.
 
 McElreath compares linear regression to Ptolemy's thinking about the universe. Quite clever: jolts you into realising that any method we use is just a model.
 That's a core message of this book: don't apply stats formulaicly thinking it will give you the truth - need to understand limitations/assumptions of models.
 Reminder of George Box quote:  "All models are wrong, but some are useful".
+
+See also: http://doingbayesiandataanalysis.blogspot.com/2012/05/graphical-model-diagrams-in-doing.html  
+Nice graphical models
 
 ## 4.1 Why normal distributions are normal
 This section was pretty straightforward - useful illustration of basic point about central limit theorem.
@@ -725,9 +731,28 @@ lm(lm_formulas_alist[[2]], data = mtcars)
 Use of logarithms /exponentials
 All a bit hair-raising
 
-```{r log.exp}
+We'll first redefine the original m4.3
+
+```{r m4.3}
 #4.43 - note log_b is a defined variable, not a function here
 m4.3 <- quap( 
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b*( weight - xbar ),
+a ~ dnorm( 178 , 20 ) ,
+b ~ dnorm( 0 , 1 ) ,
+sigma ~ dunif( 0 , 50 )
+) ,
+data=d2 )
+summary(m4.3)
+
+
+#this gives plot from next section
+pairs(m4.3)
+```
+```{r log.exp}
+#4.43 - note log_b is a defined variable, not a function here
+m4.3b <- quap( 
 alist(
 height ~ dnorm( mu , sigma ) ,
 mu <- a + (log_b)*( weight - xbar ),
@@ -736,11 +761,11 @@ log_b ~ dnorm( 0 , 1 ) ,
 sigma ~ dunif( 0 , 50 )
 ) ,
 data=d2 )
-summary(m4.3)
+summary(m4.3b)
 #Note exp(-.1) equals .904, which was b value in original m4.3
 
 #this gives plot from next section
-pairs(m4.3)
+pairs(m4.3b)
 ```
 
 Importance of plotting posterior distributions
@@ -755,9 +780,9 @@ between outcome and predictor
 
 ```{r 4.46}
 plot( height ~ weight , data=d2 , col=rangi2 ) #scatterplot
-post <- extract.samples( m4.3b )
+post <- extract.samples( m4.3 )
 a_map <- mean(post$a) #154.6
-b_map <- mean(post$log_b) #.903
+b_map <- mean(post$b) #.903
 curve( a_map + b_map*(x - xbar)) #x is vector of x values; this just plots regression line from formula. add=TRUE means add to scatterplot
 #this is just best fitting line
 
@@ -792,6 +817,7 @@ for ( i in 1:Nsamples )
 ```
 
 
+
 Bayesian perspective: Posterior probabilities of parameter values describe the relative compatibility of different states of the world with the data, according to the model.
 
 ```{r moresamples}
@@ -812,7 +838,7 @@ ie need link function
 ```{r linkfunction}
 #define sequence of wts to compute predictions for
 # These values will be on horizontal axis
-weight.seq <- seq(from=25,to=70,by=1)
+weight.seq <- seq(from=25,to=70,by=1) #there are 46 values of weight.seq
 
 #use link to compute mu
 mu <- link( m4.3 ,data=data.frame(weight=weight.seq))
@@ -905,9 +931,9 @@ The syntax is what is difficult for me: the idea you make a function this way, s
 #try analogous formula with v simple algebra
 
 myfunc <- function(weight) 3+2*weight #double weight and add 3
-weight.seq <- seq( from=25 , to=70 , by=5 ) #25,30,35 ...etc
-weight.seq
-myout <- sapply(weight.seq,myfunc) #yes, this doubles weight and adds 3!
+weight.seqb <- seq( from=25 , to=70 , by=5 ) #25,30,35 ...etc
+weight.seqb
+myout <- sapply(weight.seqb,myfunc) #yes, this doubles weight and adds 3!
 myout
 
 #but in e.g. above, because formula contains reference to post$a and post$b, it is applied to whole column, i.e., all the rows in post
@@ -921,6 +947,8 @@ We got prediction interval for average height,but can get for the actual observe
 ```{r R4.59}
 sim.height <- sim(m4.3,data=list(weight=weight.seq))
 str(sim.height) #1000 rows and 46 columns
+
+#Summarise simulated heights; find probability interval
 height.PI <- apply(sim.height,2,PI,prob=.89)
 
 #plot raw data
@@ -1346,61 +1374,259 @@ DB: Means sigma max is eight. (Could either set to uniform between 0 and 8, or f
 ## 4M7
 Refit model m4.3 but omit mean weight xbar
 First redo original:
-```{r log.exp}
-#4.43 - note log_b is a defined variable, not a function here
-m4.3 <- quap( 
-alist(
-height ~ dnorm( mu , sigma ) ,
-mu <- a + (log_b)*( weight - xbar ),
-a ~ dnorm( 178 , 20 ) ,
-log_b ~ dnorm( 0 , 1 ) ,
-sigma ~ dunif( 0 , 50 )
-) ,
-data=d2 )
-summary(m4.3)
-#Note exp(-.1) equals .904, which was b value in original m4.3
+```{r modelm4.3}
+d <- Howell1 #I have changed name from d to myd, as I find single character names 
 
-#this gives plot from next section
+d2 <- myd[ myd$age >= 18 , ]
+#4.43 
+m4.3 <- quap( 
+  alist(
+    height ~ dnorm( mu , sigma ) ,
+    mu <- a + b*( weight - xbar ),
+    a ~ dnorm( 178 , 20 ) ,
+    b ~ dlnorm( 0 , 1 ) ,
+    sigma ~ dunif( 0 , 50 )
+  ) ,data=d2 )
+summary(m4.3)
+
+
 pairs(m4.3)
 vcov(m4.3)
 ```
 
 Now do without xbar
 
-```{r log.exp}
-#4.43 - note log_b is a defined variable, not a function here
-m4.3 <- quap( 
+```{r no.xbar}
+
+m4.3b <- quap( 
 alist(
 height ~ dnorm( mu , sigma ) ,
-mu <- a + (log_b)*( weight ),
+mu <- a + b* weight ,
 a ~ dnorm( 178 , 20 ) ,
-log_b ~ dnorm( 0 , 1 ) ,
+b ~ dlnorm( 0 , 1 ) ,
 sigma ~ dunif( 0 , 50 )
 ) ,
 data=d2 )
-summary(m4.3)
+ #summary(m4.3b)
 #Note exp(-.1) equals .904, which was b value in original m4.3
 
 #this gives plot from next section
-pairs(m4.3)
-vcov(m4.3)
+pairs(m4.3b)
+#vcov(m4.3b)
+
+#bolt results together so we can compare
+rbind(summary(m4.3),summary(m4.3b))
+rbind(vcov(m4.3),vcov(m4.3b))
 ```
 
-The estimate of a changes, but the other estimates remain same.
+Table shows first results from original model, then from model with no xbar.
 
+The estimates for variable a change, but the other estimates remain same. 
 Variances are now more variable in magnitude - presumably because not centred.
 
+Now compare posterior predictions.
+
+```{r compare.postpreds}
+sim.height1 <- sim(m4.3,data=list(weight=weight.seq),n=1e4)
+sim.height2 <- sim(m4.3b,data=list(weight=weight.seq),n=1e4)
+height.PI1<-apply(sim.height,2,PI,prob=.89)
+height.PI2<-apply(sim.height2,2,PI,prob=.89)
+
+dens(sim.height1)
+dens(sim.height2,add=T,col='blue')
+```
+
+Hmm. They seem the same.
+Not sure if that's right, though it does seem as if just rescaling a variable should not alter the likelihood function.  
+
+Is the point that centring is just done to help with model fitting?
+
+## 4M8.
+I have already played about with splines so won't do this one. 
+I need to be convinced that it is worth spending mental energy on splines!!
+
+## 4H1
+
+Find expected heights and 89% interval for individuals from the model
+
+```{r do.predict}
+mydf <- data.frame(matrix(NA,nrow=5,ncol=5))
+colnames(mydf)<-c('ID','weight','pred.ht','PIlo','PIhi')
+mydf$weight<-c(46.95,43.72,64.78,32.59,54.63)
+mydf$ID<-1:5
+weight.list<-seq(32,65) #range to span values to estimate
+nusim <- sim( m4.3 ,data=list(weight=mydf$weight))
+dim(nusim) #1000 rows for each weight
 
 
+mydf$pred.ht <- colMeans(nusim)
+#Go through each value to find PI and put in data frame.
+# I suspect this bit could be done without the loop....
+for(i in 1:5){
+  mydf[i,4:5]<-PI(nusim[,i],.89)
+}
+
+```
+## 4H2
+Select out rows in Howell1 data with ages below 18.
+a) Fit linear regression to the data using quap
+
+```{r children}
+d <- Howell1 #I have changed name from d to myd, as I find single character names 
+
+d3 <- myd[ myd$age < 18 , ]
+m4.3c <- quap( 
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b* weight ,
+a ~ dnorm( 50 , 20 ) ,
+b ~ dlnorm( 0 , 1 ) ,
+sigma ~ dunif( 0 , 50 )
+) ,
+data=d3 )
+precis(m4.3c)
+
+```
+
+Child grows 27 cm for every 10 units of increase in weight.
+
+b) Plot the raw data, with height on vertical axis and wt on horizontal. Superimpose MAP regression line and 89% interval for mean.
+Also superimpose 89% interval for predicted heights.
+
+```{r plotchild}
+plot(d3$weight,d3$height)
+post <- extract.samples( m4.3c )
+a_map <- mean(post$a) 
+b_map <- mean(post$b) 
 
 
+curve( a_map + b_map*x,from = 5,to=50,add=T) 
+wtrange<-5:50
+mywtdf <- data.frame(wtrange)
+colnames(mywtdf)<-'weight'
+mu <- link(m4.3c,data=mywtdf) #one column for each value of wtrange
+
+#this is what I've been struggling with as I find it much easier to work with transposed matrix, where you can then see weight increasing with each row.
+
+#But once you understand this is a matrix where there's a value for each sample (rows) for each weight value (columns) it is easier to work out what is going on. But here, sample is defined as values of weight, rather than the true data.
+
+plot(height~weight,d3,type='n')
+for(i in 1:20){
+  points(wtrange,mu[i,],col=col.alpha(rangi2,0.1))
+}
+
+#summarise distribution of mu
+mu.mean <- apply(mu,2,mean)  #OK. this is same as colMeans(mu). The 2 indicates mean is computed over 2nd dimension (columns)
+mu.PI <- apply(mu,2,PI,prob=.89) #gives pair of values for each value of weight
+```
+
+I think that now if I plot (wtrange,mu.mean) this should be identical to the 'curve' result above. Let's see.
+Starting over with original code:
+```{r exercise4H2}
+plot(d3$weight,d3$height,xlim=c(5,50))
+post <- extract.samples( m4.3c )
+a_map <- mean(post$a) 
+b_map <- mean(post$b) 
+mu <- link(m4.3c,data=mywtdf) #one column for each value of wtrange
+
+mu.mean <- apply(mu,2,mean)  #OK. this is same as colMeans(mu). The 2 indicates mean is computed over 2nd dimension (columns)
+mu.PI <- apply(mu,2,PI,prob=.89) #gives pair of values for each value of weight
+
+wtrange<-5:50
+lines(wtrange,mu.mean,col='red') 
+curve( a_map + b_map*x,from = 5,to=50,add=T) 
+shade(mu.PI,wtrange)
+```
+I struggled with this for a long time, only to find I had specified link function for m4.3 rather than m4.3c.
+
+But with right link function, yes, this gives what we want.
+
+We now need to add the shaded area for predicted heights.
+For this we need to use sim rather than link to generate values.
+
+```{r shadepredictions}
+mysim <- sim(m4.3c,data=mywtdf)
+#check: each column corresponds to data simulated for one of the weight values
+meanvals <- colMeans(mysim) #can see these increasing systematically
+
+meanvals.PI <- apply(mysim,2,PI,prob=.89) #gives pair of values for each value of weight
+
+#now just repeat the plot with this added
+plot(d3$weight,d3$height,xlim=c(5,50))
+lines(wtrange,mu.mean,col='red') 
+curve( a_map + b_map*x,from = 5,to=50,add=T) 
+shade(mu.PI,wtrange)
+shade(meanvals.PI,wtrange)
+```
+
+Yes!
+
+This reinforces the fact that there are parallels between link and sim.
+Both of them generate a lot of simulated data (default 1000 values).
+If you don't specify a dataset, the simulation will use the raw data you started with, and each column will correspond to a datapoint for which new data is simulated.
+If you do specify a dataset, the simulation will use that. So if you want to generate data for a given range of x, you can just make a little dataframe with values of x, and it will use those. This has to have the key x-variable (in this case weight) with the same name as in the original dataset.
+
+With link, the generated data are estimates of the parameter values, e.g. mu in this case (derived from a and b), and the probability interval around this is just reflecting precision of estimate of mu.
+
+With sim, the generated data are simulated values of weight in the population, which use the sigma as well as the mu value. This reflects the fact that individual people will vary in mu. There will always be a bigger spread around esimates that use sim, rather than those based on link (I think!).
+
+Things I found helpful in getting to grips with this:
+Looking at dimensions of output from link and sim, and then looking at some of the values as well.  
+Making a mistake! I spent some time utterly baffled as to why my plot from the link function didn't sit on top of the value specified in 'curve', but that made me look at the mu I'd got from the link function and it did not make sense (apart from anything else, it had wrong dimensions) - being forced to really look at what is in the variables is good to track down errors.  
+I'm not used to using apply, even though I realise I should use it, as it is much more efficient than using loops. But realising that 
+mu.mean <- apply(mu,2,mean) is same as colMeans(mu) was a leap forward in understanding, and I could then generalise that knowledge a bit.
 
 
+Getting back to the exercise, the main problem with the plot is that data has curvilinear relation between wt and ht, and this is linear.
+A quadratic function might be better.  
+
+## Exercise 4H3
+Model relation of ht to log weight, using whole dataset. Can I interpret the estimates.
+
+```{r ex4H3a}
+d <- Howell1 #I have changed name from d to myd, as I find single character names 
+d$logwt <- log(d$weight)
+plot(d$weight,d$logwt,main='Demo of how log transform works') #illustrating impact of log transform
+#Log transform flattens out larger values
+plot(d$logwt,d$height,main='Log wt x height, whole sample')
+m4.3d <- quap( 
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b* logwt ,
+a ~ dnorm( 50 , 20 ) ,
+b ~ dlnorm( 0 , 1 ) ,
+sigma ~ dunif( 0 , 50 )
+) ,
+data=d )
+precis(m4.3d)
 
 
+```
 
 
+Interpretation: negative intercept is OK, because logwt is never zero ,and b is large, so will always end up adding the b-term which will give a positive value.
 
+b) start with a plot of height x weight and then superimpose things on the plot.
+
+```{r htwtplots}
+plot(height~weight,data=d)
+wtrange<-5:65 #need larger range with adults included
+mywtdf <- data.frame(wtrange)
+colnames(mywtdf)<-'weight'
+mywtdf$logwt <- log(mywtdf$weight)
+mu <- link(m4.3d,data=mywtdf)
+mumeans <- apply(mu,2,mean)
+
+mu.PI <- apply(mu,2,PI,.97)
+mysim <- sim(m4.3d,data=mywtdf)
+meanvals.PI <- apply(mysim,2,PI,prob=.97) #gives pair of values for each value of weight
+lines(wtrange,mumeans, col ='red',lty=2) #made line dashed in order to see shaded area around it, as it is very tight.
+shade(mu.PI,wtrange)
+shade(meanvals.PI,wtrange)
+
+```
+
+Not sure why the mean line
 
 
 
