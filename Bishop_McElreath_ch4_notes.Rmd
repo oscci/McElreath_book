@@ -1736,6 +1736,27 @@ Things that are interesting to explore are relative size of SD of a, relative to
 Also explore making b2 lognorm as well as b1.
 Then you get curvilinear, but with a dip at mean - makes sense because mean is zero, whereas squared values to either size are larger.
 
+After moving on to chapter 5, realise I had neglected the 'extract prior' command, which might be useful here.
+```{r more4h4}
+mypriors <- extract.prior(m4.5)
 
+```
+Hmm, I think it's just an easy way to get the sets of values for sample_a, sample_b1 etc, as it generates a list which has values for all parameters.
 
+But in ch 5, p 126, M shows you can then use those values with the link function.
+
+So this is a much easier way to do what I tried above in prior h4.4
+```{r yetmore4h4}
+
+mu <- link(m4.5,post=mypriors,data=list(weight_s=wtrange,weight_s2=wtrange^2))
+
+mu.means<-colMeans(mu)
+plot(wtrange,mu.means,ylim=c(80,200),col='red',pch=15)
+
+#Looking at individual plots from predht.df.
+#They are more nonlinear, but seem to cancel each other out.
+for (i in 1:20){
+  lines(wtrange,mu[i,])
+}
+```
 
