@@ -1581,10 +1581,10 @@ Getting back to the exercise, the main problem with the plot is that data has cu
 A quadratic function might be better.  
 
 ## Exercise 4H3
-Model relation of ht to log weight, using whole dataset. Can I interpret the estimates.
+Model relation of ht to log weight, using whole dataset. Can I interpret the estimates? (see further below - I did not fit the model as described in the exercise, though all looks good!)
 
 ```{r ex4H3a}
-d <- Howell1 #I have changed name from d to myd, as I find single character names 
+d <- Howell1 
 d$logwt <- log(d$weight)
 plot(d$weight,d$logwt,main='Demo of how log transform works') #illustrating impact of log transform
 #Log transform flattens out larger values
@@ -1609,7 +1609,7 @@ Interpretation: negative intercept is OK, because logwt is never zero ,and b is 
 b) start with a plot of height x weight and then superimpose things on the plot.
 
 ```{r htwtplots}
-plot(height~weight,data=d)
+plot(height~weight,data=d,pch=4,cex=.5) #pch is cross, cex is size; so small crosses
 wtrange<-5:65 #need larger range with adults included
 mywtdf <- data.frame(wtrange)
 colnames(mywtdf)<-'weight'
@@ -1621,16 +1621,120 @@ mu.PI <- apply(mu,2,PI,.97)
 mysim <- sim(m4.3d,data=mywtdf)
 meanvals.PI <- apply(mysim,2,PI,prob=.97) #gives pair of values for each value of weight
 lines(wtrange,mumeans, col ='red',lty=2) #made line dashed in order to see shaded area around it, as it is very tight.
-shade(mu.PI,wtrange)
+shade(mu.PI,wtrange,col=col.alpha(rangi2,0.5))
 shade(meanvals.PI,wtrange)
 
 ```
 
-Not sure why the mean line
+Can also check 97% interval makes sense: with 544 cases, would expect around 15 to be outside this interval - that is the case.
+
+Oh, just realised I did not follow instructions re model to be fitted! Here is model specification
+$$hi \sim Normal(\mu_i, \sigma)$$
+
+$$\mu_i = \alpha +\beta log(w_i)$$
+$$\alpha \sim Normal(178,20)$$
+$$\beta \sim LogNormal(0, 1)$$
+
+$$\sigma \sim Uniform(0, 50)$$
+So we'll create this as revised model4.3e
+
+```{r model4.3e}
+d <- Howell1 #I have changed name from d to myd, as I find single character names 
+m4.3e <- quap( 
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b* log(weight) ,
+a ~ dnorm( 178 , 20 ) ,
+b ~ dlnorm( 0 , 1 ) ,
+sigma ~ dunif( 0 , 50 )
+) ,
+data=d )
+precis(m4.3e)
 
 
+```
+
+This is virtually identical to previous model, even though the prior for a in my model d was considerably smaller. Only other difference was that instead of precomputing logweight as I did for model 4.3d, here it is computed within quap
+
+## 4H4
+Plot the prior predictive distribution for the polynomial regression model in the chapter. You can modify the code that plots the linear regression prior predictive distribution. 
+Can you modify the prior distributions of $$\alpha, \beta_1, and  \beta_2$$ so that the prior predictions stay within the biologically reasonable outcome space? That is to say: Do not try to fit the data by hand. But do try to keep the curves consistent with what you know about height and weight, before seeing these exact data.
+
+see p 110-111 of book.
+First we'll just repeat the model to remind ourselves of it
+
+```{r e4h4}
+d$weight_s <-(d$weight - mean(d$weight))/sd(d$weight)
+d$weight_s2<-d$weight_s^2
+m4.5 <- quap( 
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b1* weight_s + b2*weight_s2,
+a ~ dnorm( 178, 20 ) ,
+b1 ~ dlnorm( 0 , 1 ) ,
+b2 ~ dnorm( 0 , 1 ) , #don't use log transform for quadratic term
+sigma ~ dunif( 0 , 50 )
+) ,
+data=d )
+precis(m4.5)
+
+```
+```{r plotm4.5}
+weight.seq <- seq(from =-2.2, to =2, length.out=30) #these are like z-scores so range is -2.2 to 2 to capture most values
+pred_dat <- list(weight_s=weight.seq, weight_s2 = weight.seq^2)
+#for the link function we need 2 predictors for weight, for b1 and b2
+#b1 is just the standardized weight sequence, but b2 is squared
+
+mu <- link(m4.5,data=pred_dat)
+dim(mu) #we have 1000 rows and 30 cols ; cols correspond to b1/b2 values
+mu.mean <- apply(mu,2,mean) #mean prior predicted for each b1/b2 value
+mu.PI <- apply (mu,2, PI, prob=.89)
+
+sim.height <- sim(m4.5,data=pred_dat) #as before, direct parallel with link, except this time we simulate data, rather than the mu values
+height.PI <- apply(sim.height, 2, PI, prob=.89)
+
+plot(height ~ weight_s,d,col=col.alpha(rangi2,.5),main='Quadratic fit m4.5')
+lines(weight.seq,mu.mean)
+shade(mu.PI,weight.seq)
+shade(height.PI,weight.seq)
+
+```
+
+```{r priorh4.4}
+
+#Now compute height distribution by sampling from priors (based on code R4.14, 4.38)
+N <- 500
+sample_a <- rnorm( N , 178 , 50 ) #just sample N random values from prior a
+sample_b1 <- rlnorm( N ,0,1 ) #just sample N random values from prior b1
+sample_b2 <- rnorm( N ,0,1 ) #just sample N random values from prior b2
+
+sample_sigma <- runif( N, 0 , 50 )#just sample 10000 random values from prior sigma (?needed here)
+
+wtrange <- seq(from = -2, to = 2, length.out=30) #range for standardized wts
+
+#Just checking what predicted hts are like for these 100 simulated values
+
+predht.df <- data.frame(matrix(NA,nrow=N,ncol=30))
+for (i in 1:N){
+  predht.df[i,]<-sample_a[i]+sample_b1[i]*wtrange+sample_b2[i]*wtrange^2
+}
+meanpreds<-colMeans(predht.df)
+plot(wtrange,meanpreds,ylim=c(80,200),col='red',pch=15)
+
+#Looking at individual plots from predht.df.
+#They are more nonlinear, but seem to cancel each other out.
+for (i in 1:20){
+  lines(wtrange,predht.df[i,])
+}
 
 
+```
+
+I've played around a fair bit with the priors.
+Was surprised that with the values from the example, function looks remarkably linear, so altered things to make it less so.
+Things that are interesting to explore are relative size of SD of a, relative to variation in b1 and b2.
+Also explore making b2 lognorm as well as b1.
+Then you get curvilinear, but with a dip at mean - makes sense because mean is zero, whereas squared values to either size are larger.
 
 
 
