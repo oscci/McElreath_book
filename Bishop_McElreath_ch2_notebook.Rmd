@@ -1,0 +1,982 @@
+---
+title: "McElreath exercises"
+author: "DVM Bishop"
+date: "15/04/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(rethinking)
+```
+
+# Exercises/code chunks from chapter 2
+
+```{r grid}
+# define grid
+p_grid <- seq( from=0 , to=1 , length.out=20)
+# define prior
+#prior <- rep( 1 , 20 )
+prior <- ifelse( p_grid < 0.5 , 0 , 1 )  #this was defined in ch 2 as alternative to uniform prior - means that values < .5 have prior of zero
+# compute likelihood at each value in grid
+likelihood <- dbinom( 5 , size=7 , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+plot( p_grid , posterior , type="b" ,
+      xlab="probability of water" , ylab="posterior probability" )
+mtext( "20 points" )
+
+```
+
+```{r quadratics}
+#quadratics
+require(rethinking)
+
+globe.qa <- quap(
+  alist(
+    W ~ dbinom( W+L ,p) , # binomial likelihood
+    p ~ dunif(0,1) # uniform prior
+  ) ,
+  data=list(W=6,L=3) )
+# display summary of quadratic approximation
+precis( globe.qa )
+
+# mean   sd 5.5% 94.5%
+#p 0.67 0.16 0.42  0.92
+
+```
+Trying to make sense of this.
+Mean is approx probability in previous plot that gives max value.
+In next chunk I try to check out the CIs
+
+```{r quadcompare}
+w<-which(posterior==max(posterior))
+p_grid[w]
+#sum of posterior = 1, so to find CI need to find when sum is .055 or .945
+cilo <-0
+cihi <-0
+myci <-.055
+i=1
+while(cilo==0){
+  i<-i+1
+  thissum<-sum(posterior[1:i])
+  if(thissum > myci){
+  cilo<- p_grid[i]
+   }
+}
+i=length(posterior)
+while(cihi==0){
+  i<-i-1
+  thissum<-sum(posterior[i:length(posterior)])
+  if(thissum > myci){
+    cihi<- p_grid[i]
+  }
+}
+print(cilo)
+print(cihi)
+```
+
+The lower CI is good match to quadratic estimate - upper CI is lower - may be to do with grain?
+I checked by increasing N points to 100, but that does not help it. Maybe because quadratic is symmetric and likelihood function is not?
+Some discussion of this in the book - reassuring that upper end of curve tends to fit less well in examples he gives.
+
+```{r betacalc}
+# analytical calculation 2.7
+W <- 6
+L <- 3
+curve( dbeta( x , W+1 , L+1 ) , from=0 , to=1 )
+# quadratic approximation
+curve( dnorm( x , 0.67 , 0.16 ) , lty=2 , add=TRUE )
+
+```
+
+
+```{r montecarlo}
+n_samples <- 1000 
+p <- rep( NA , n_samples ) #initialise p vector
+p[1] <- 0.5 #start value for p at .5
+W <- 6
+L <- 3
+for ( i in 2:n_samples ) {
+  p_new <- rnorm( 1 , p[i-1] , 0.1 ) #random p value based on previous p value with small sd
+  if ( p_new < 0 ) p_new <- abs( p_new ) #avoid negative numbers
+  if ( p_new > 1 ) p_new <- 2 - p_new  #avoid numbers > 1
+  q0 <- dbinom( W , W+L , p[i-1] ) #binomial probability for previous p
+  q1 <- dbinom( W , W+L , p_new ) #binomial probability for this p
+  p[i] <- ifelse( runif(1) < q1/q0 , p_new , p[i-1] ) #depends on random prob relative to likelihood of both q values
+#either stick with prior p or take the new one
+  }
+plot(p[1:500],type='l') #DB added to show homing process - values cluster around true p
+#but values are not converging! sd as great for last 100 as first 100
+dens( p , xlim=c(0,1) )
+curve( dbeta( x , W+1 , L+1 ) , lty=2 , add=TRUE )
+
+
+
+```
+
+
+2M3. Suppose there are two globes, one for Earth and one for Mars. The Earth globe is 70% covered in water. The Mars globe is 100% land. Further suppose that one of these globes—you don’t know which—was tossed in the air and produced a “land” observation. Assume that each globe was equally likely to be tossed. Show that the posterior probability that the globe was the Earth, conditional on seeing “land” (Pr(Earth|land)), is 0.23.
+
+Earth prior = .5
+Mars prior = .5
+Land|Earth = .3
+Land|Mars = 1
+What is p(Earth|Land)
+
+pLE <- .3 #Land|Earth = .3
+pE <- .5 #Earth prior = .5
+pL <- .65 = .5 * (Land|earth + Land|mars)
+
+pEL <- pLE*pE/pL
+= 0.2307692
+
+ 2M4. Suppose you have a deck with only three cards. Each card has two sides, and each side is either black or white. One card has two black sides. The second card has one black and one white side. The third card has two white sides. Now suppose all three cards are placed in a bag and shuffled. Someone reaches into the bag and pulls out a card and places it flat on a table. A black side is shown facing up, but you don’t know the color of the side facing down. Show that the probability that the other side is also black is 2/3. Use the counting method (Section 2 of the chapter) to approach this problem. This means counting up the ways that each card could produce the observed data (a black side facing up on the table).
+
+pA <- 0
+pB <- .5
+pC <- 1
+
+Cannot be card A
+ so p of card C is 1/1.5 = 2/3
+
+2M5. Now suppose there are four cards: B/B, B/W, W/W, and another B/B. Again suppose a card is drawn from the bag and a black side appears face up. Again calculate the probability that the other side is black.
+
+Add card D which is B/B
+
+pA<-0
+pB<-.5
+pC<-1
+pD<-1
+
+So need pC or D, which is pC = 1/2.5, pD = 1/2.5 : since they are mutually exclusive is 2/2.5
+Or could compute as not card B: Card B is .5/2.5, so this seems to work. 
+So answer is .8
+
+2M6. Imagine that black ink is heavy, and so cards with black sides are heavier than cards with white sides. As a result, it’s less likely that a card with black sides is pulled from the bag. So again assume there are three cards: B/B, B/W, and W/W. After experimenting a number of times, you conclude that for every way to pull the B/B card from the bag, there are 2 ways to pull the B/W card and 3 ways to pull the W/W card. Again suppose that a card is pulled and a black side appears face up. Show that
+the probability the other side is black is now 0.5. Use the counting method, as before.
+
+Probability of black on single draw
+
+A = 1
+B = .5
+C = 0
+
+differential likelihood of selecting card means in effect we have
+
+A = 1
+B1 = .5
+B2 = .5
+C1 = 0
+C2 = 0
+C3 = 0
+
+probability that other side is black is probability of A relative to A+B1+B2 = .5
+
+2M7. Assume again the original card problem, with a single card showing a black side face up. Before looking at the other side, we draw another card from the bag and lay it face up on the table. The face that is shown on the new card is white. Show that the probability that the first card, the one showing a black side, has black on its other side is now 0.75. Use the counting method, if you can. Hint: Treat this like the sequence of globe tosses, counting all the ways to see each observation, for each possible first card.
+
+3 options for 2 draws
+We are looking for probability of A+B or A+C
+These are all the pairings that could give an initial black and 2nd white
+A+ B  
+B+ C
+A +C
+
+Hm - looks like I have probability of 2/3 rather than .75
+So something wrong - need to take into account prob of black?
+
+A + B  black + white is 1 then .5
+B + C  black then white is .5 then 1
+A + C  black then white is 1 then 1
+
+Ah hah - so if we multiply probls we have .5, .5, 1 for the 3 combinations
+
+So total probs are 2, and the options with A come to 1.5, so 1.5/2 .
+Yes!
+
+2H1. Suppose there are two species of panda bear. Both are equally common in the wild and live in the same places. They look exactly alike and eat the same food, and there is yet no genetic assay capable of telling them apart. They differ however in their family sizes. Species A gives birth to twins 10% of the time, otherwise birthing a single infant. Species B births twins 20% of the time, otherwise birthing singleton infants. Assume these numbers are known with certainty, from many years of field
+research.
+Now suppose you are managing a captive panda breeding program. You have a new female panda of unknown species, and she has just given birth to twins. What is the probability that her next birth will also be twins?
+
+prob (twin|A) = .1
+prob (twin|B) = .2
+
+prob (A|twin) = p (twin|A)* p(A) / p (twin) = (.1 * .55)/.15 = .36
+prob (B|twin) = (.2 * .5)/.15 = .66 
+
+so probability of 2nd cub being twin is .36 * .1 + .66*.2 = .168
+
+2H2. Recall all the facts from the problem above. Now compute the probability that the panda we have is from species A, assuming we have observed only the first birth and that it was twins.
+
+Presumably this is .36/(.36 + .66) = .352
+
+Seems right range - i.e p goes down from prior of .5.
+
+2H3. Continuing on from the previous problem, suppose the same panda mother has a second birth and that it is not twins, but a singleton infant. Compute the posterior probability that this panda is species A.
+
+Prior probability of species A is now .352 rather than .5.
+So same Bayes formula but now:
+
+prob (A|single) = p (single|A)* p(A) / p (single) = .9 * .352/.85 = .372
+
+seems in right ballpark, i.e. p goes up a bit
+
+
+2H4. A common boast of Bayesian statisticians is that Bayesian inference makes it easy to use all of the data, even if the data are of different types.
+So suppose now that a veterinarian comes along who has a new genetic test that she claims can identify the species of our mother panda. But the test, like all tests, is imperfect. This is the information
+you have about the test:
+ The probability it correctly identifies a species A panda is 0.8.
+ The probability it correctly identifies a species B panda is 0.65.
+The vet administers the test to your panda and tells you that the test is positive for species A. First ignore your previous information from the births and compute the posterior probability that your panda is species A. Then redo your calculation, now using the birth data as well
+
+p(testpos|A) = .8
+p(testpos|B) = .65
+(presumably test is not just between A and B?)
+
+p(A|testpos) = p(testpos|A * p(A)/p(testpos))
+
+This is a bit confusing as we haven't been told about sens and spec of the test, and don't know if same test for all pandas? But if we assume p(testpos) is average of .8 and .65, then  we get
+
+p(A|testpos) = .8 * .5 / .725 = .55
+
+Also unclear what is meant by 'the birth data' as this varies from problem to problem, but if we take the most recent problem where p(A) is .372
+
+
+p(A|testpos) = .8 * .372 / .725 = .41
+
+
+
+
+
+
+# Homework from website
+https://github.com/rmcelreath/statrethinking_winter2019/blob/master/homework/week01.pdf
+
+# Homework week 1
+```{r globes}
+#1. Globe tossing, 8 in 15
+
+p_grid <- seq( from=0 , to=1 , length.out=20)
+# define prior
+prior <- rep( 1 , 20 )
+# compute likelihood at each value in grid
+likelihood <- dbinom( 8 , size=15 , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+p1<-plot( p_grid , posterior , type="b" ,
+      xlab="probability of water" , ylab="posterior probability",ylim=c(0,.30) )
+mtext( "20 points" )
+abline(v=.7)
+abline(h=posterior[14],lty=2)
+
+#2 Globe tossing with biased prior
+p_grid <- seq( from=0 , to=1 , length.out=20)
+# define prior
+prior <- ifelse( p_grid < 0.5 , 0 , 1 ) 
+# compute likelihood at each value in grid
+likelihood <- dbinom( 8 , size=15 , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+
+p2 <- plot( p_grid , posterior , type="b" ,
+      xlab="probability of water" , ylab="posterior probability" ,ylim=c(0,.30) )
+mtext( "20 points" )
+abline(v=.7)
+abline(h=posterior[14],lty=2)
+
+```
+
+Q3. This problem is more open-ended than the others. Feel free to collaborate
+on the solution. Suppose you want to estimate the Earth’s proportion of
+water very precisely. Specifically, you want the 99% percentile interval of the
+posterior distribution of p to be only 0.05 wide. This means the distance between
+the upper and lower bound of the interval should be 0.05. How many
+times will you have to toss the globe to do this? I won’t require a precise
+answer. I’m honestly more interested in your approach.
+
+I'd use simulation! Seems like a power calculation
+Explore various intervals to home in on optimal.
+But have to assume particular value is correct to do this: let's go for .7, with prior excluding values < .5
+Could exclude more than this? Clearly, the prior will make it easier with small N obs.
+
+
+```{r Q3_week1}
+truep <- .7
+allN <- seq(25,500,25) #sample sizes to test
+lengthN <- length(allN)
+myresults<-data.frame(matrix(NA,nrow=lengthN,ncol=6))
+colnames(myresults) <- c('N','mean','sd','lowCI','hiCI','diff')
+thisrow <- 0
+for (myn in allN){
+  thisrow <- thisrow+1
+  W <- round(myn*truep,0)
+  L <- myn - W
+globe.qa <- quap(
+  alist(
+    W ~ dbinom( myn ,p) , # binomial likelihood
+    p ~ dunif(0,1) # uniform prior
+  ) ,
+  data=list(W=W,L=L) )
+# display summary of quadratic approximation
+myprec <- precis( globe.qa )
+myresults[thisrow,2:5] <- myprec
+myresults[thisrow,1]<-myn
+myresults[thisrow,6] <- myprec[4]-myprec[3]
+}
+```
+This gives the required table for output, but the precis gives wrong CI - not sure how to adjust for 99 percentile.
+
+And when I changed the range of N to include much bigger, it crashed.
+
+Also, attempt to change the prior to
+
+      p ~ ifelse( runif(1) < 0.5 , 0 , 1 ) 
+    
+Led to weird error: Error in rfelse
+
+So I'm still pretty confused by quap, but pleased I got as far as this....
+
+```{r gridapproach}
+#2 Globe tossing with biased prior, using grid
+p_grid <- seq( from=0 , to=1 , length.out=100)
+# define prior
+prior <- ifelse( p_grid < 0.5 , 0 , 1 ) 
+
+for (numtries in seq(1000,2000,100)){
+# compute likelihood at each value in grid
+likelihood <- dbinom( .7*numtries , size=numtries , prob=p_grid )
+# compute product of likelihood and prior
+unstd.posterior <- likelihood * prior
+# standardize the posterior, so it sums to 1
+posterior <- unstd.posterior / sum(unstd.posterior)
+myhead <- paste0('N tries = ',numtries)
+p2 <- plot( p_grid , posterior , type="l" ,
+      xlab="probability of water" , ylab="posterior probability" ,ylim=c(0,.50),main=myhead )
+
+abline(v=.7,col='red')
+
+}
+
+```
+# Chapter 3
+
+code 3.2- onward
+
+I was unsure about  meaning of 'bandwidth' so the code is tweaked to change sample size.
+This confirms that bandwidth goes down with sample size, but it is still unclear exactly what it is.
+
+```{r code3.2}
+require(rethinking)
+p_grid <- seq( from=0 , to=1 , length.out=1000 )
+prob_p <- rep( 1 , 1000 )
+prob_data <- dbinom( 6 , size=9 , prob=p_grid )
+posterior <- prob_data * prob_p
+posterior <- posterior / sum(posterior)
+#modifying script to check meaning of bandwidth
+for (b in c(100,1000,10000)){
+samples <- sample( p_grid , prob=posterior , size=b , replace=TRUE )
+dens(samples)
+}
+
+```
+
+Turned to Google, which gives me this
+https://stats.stackexchange.com/questions/61374/what-does-bandwidth-mean
+
+**The bandwidth is a measure of how closely you want the density to match the distribution.
+
+See help(density):
+
+    bw the smoothing bandwidth to be used. The kernels are scaled such that this is the standard deviation of the smoothing kernel. (Note this differs from the reference books cited below, and from S-PLUS.)
+
+See also
+
+    adjust the bandwidth used is actually adjust*bw. This makes it easy to specify values like ‘half the default’ bandwidth.**
+    
+Still unsure, since I don't understand kernel, and the help for density is no help!
+But below is the chunk given with example.
+
+Basically, the higher the bandwidth, the more smoothing applied to the plot.
+Can think of it like filtering a signal - just related to the bin size over which pts are averaged.
+
+
+```{r bandwidth}
+set.seed(201010)
+x <- rnorm(1000, 10, 2)
+par(mfrow = c(2,2))
+plot(density(x))  #A bit bumpy - so I guess this is the default bandwidth computed in r
+plot(density(x,adjust = 10)) #Very smmoth
+plot(density(x,adjust = .1)) #crazy bumpy
+
+
+```
+ Next goes on to consider how to compute intervals by sampling from distribution.
+ Prefers 'compatibility interval' to confidence or credibility (argh, another term is not going to really help)
+ 
+ This is 3/3 in a binomial test with unbiased prior 
+ 
+```{r intervals} 
+ p_grid <- seq( from=0 , to=1 , length.out=1000 )
+prior <- rep(1,1000)
+likelihood <- dbinom( 3 , size=3 , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+samples <- sample( p_grid , size=1e4 , replace=TRUE , prob=posterior )
+#this means you are sampling FROM pgrid a total of 10000 values without replacement, with a probability that relates to the posterior. So for each sample, you use the posterior relating to the p_grid. !!!
+
+hist(samples) #I added this - shows most at 1
+
+PI( samples , prob=0.5 ) #PI is part of 'rethinking' package, gives percentile intervals
+#these use quantile and assign equal mass to each tail - ie this is middle 50%
+
+#DB: If we change the value of prob, we get interval still centred at same point, but narrower if prob is smaller
+PI(samples,prob=.3)
+
+
+
+```
+
+HPDI is different from PI. It is the narrowest interval containing the specified
+probability mass. If you think about it, there must be an infinite number of posterior intervals
+with the same mass. But if you want an interval that best represents the parameter values
+most consistent with the data, then you want the densest of these intervals. That’s what the
+HPDI is. Compute it from the samples with HPDI (also part of rethinking):
+
+```{r hpdi}
+HPDI(samples,prob=.5)
+HPDI(samples,prob=.3)
+HPDI(samples,prob=.95)
+```
+
+Yup, this makes sense, esp if you include the plots (need to check code)
+Code from version 1 of book is here
+https://bookdown.org/content/3890/sampling-the-imaginary.html#sampling-from-a-grid-like-approximate-posterior
+
+This code below is useful training in tidyverse, and also shows how geom_ribbon can be used to colour part of a density function. I will next see if I can do that for the code above!
+
+```{r densplots}
+# how many grid points would you like?
+n <- 1001
+n_success <- 6
+n_trials  <- 9
+
+(
+  d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = n),
+         # note we're still using a flat uniform prior
+         prior  = 1) %>% 
+  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) %>% 
+  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+)  #DB behaves like a dataframe and has 4 cols which are p_grid, prior, likelihood and posterior
+
+# how many samples would you like?
+n_samples <- 1e4
+
+# make it reproducible
+set.seed(3)
+
+samples <-
+  d %>% 
+  sample_n(size = n_samples, weight = posterior, replace = T)
+
+glimpse(samples)
+samples %>% 
+  mutate(sample_number = 1:n()) %>%   #n here seems to pick up number of rows - I tried resetting and got error saying that sample_number must be length of N rows
+  
+  ggplot(aes(x = sample_number, y = p_grid)) +
+  geom_line(size = 1/10) +
+  scale_y_continuous("proportion of water (p)", limits = c(0, 1)) +
+  xlab("sample number")
+
+samples %>%  #this just means 'using the data from samples....'
+  ggplot(aes(x = p_grid)) +
+  geom_density(fill = "black") +
+  scale_x_continuous("proportion of water (p)", limits = c(0, 1)) 
+d %>% 
+  sample_n(size = 1e6, weight = posterior, replace = T) %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_density(fill = "black") +
+  scale_x_continuous("proportion of water (p)", limits = c(0, 1))
+
+p1 <-
+  d %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_line(aes(y = posterior)) +
+  geom_ribbon(data = d %>% filter(p_grid < .5),
+              aes(ymin = 0, ymax = posterior)) +
+  labs(x = "proportion of water (p)",
+       y = "density")
+
+```
+
+
+My attempt to apply geom_ribbon to my original data
+
+```{r useribbon}
+
+
+# Generate data
+
+mynrow <- 1000
+p_grid <- seq( from=0 , to=1 , length.out=mynrow )
+prior <- rep(1,mynrow)
+likelihood <- dbinom( 18 , size=19 , prob=p_grid )
+posterior <- likelihood * prior
+
+nsample=100
+rownumber<-1:mynrow
+mysample <- sample(rownumber,nsample,prob=posterior)
+
+
+mydf <- data.frame(cbind(p_grid[mysample],posterior[mysample]))
+colnames(mydf)<-c('p_grid','posterior')
+
+plot(mydf$p_grid,mydf$posterior)
+
+myrange <- PI(mydf$p_grid , prob=0.5 ) #PI is part of 'rethinking' package, gives percentile intervals
+#these use quantile and assign equal mass to each tail - ie this is middle 50%
+
+myrange2 <- HPDI(mydf$p_grid,prob=.5)
+
+  mydf %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_line(aes(y = posterior)) +
+  geom_ribbon(data = mydf%>% filter( p_grid<myrange[2],p_grid>myrange[1]),
+              aes(ymin = 0, ymax =posterior),fill='lightblue') +
+      geom_ribbon(data = mydf%>% filter( p_grid<myrange2[2],p_grid>myrange2[1]),
+              aes(ymin = 0, ymax =posterior),fill='darkblue') +
+    geom_vline(xintercept = myrange[2], 
+                color = "lightblue", size=.75,linetype='dashed')
+  labs(x = "proportion of water (p)",
+       y = "density")
+  
+  #Pale blue for the quantile-based version, dark blue for highest density
+  # Phew!
+  
+  p_grid[ which.max(posterior) ] #nice little function which.max which finds the row of the max - this is in base r!
+  #So this relates to previous homework exercise
+  
+  #See also chainmode function, which is from rethinking package
+  # This function just finds the x value that maximizes the y density in the density estimate.
+  
+  chainmode(mydf$p_grid , adj=0.01 ) #I'm a bit confused by this - how does it know what is y?
+  #I tried changing name of col 2, but it still found it!
+  #bigger adj leads to lower estimate
+  
+  #add another random column
+  mydf$rand <- runif(nrow(mydf))
+   chainmode(mydf$p_grid , adj=0.01 )  #still finds it!
+   
+   #swap cols 2 and 3
+   
+   mydf2 <- mydf[,c(1,3,2)]
+      chainmode(mydf2$p_grid , adj=0.01 )  #STILL FINDS IT!!! - how ?
+      
+      #Ah - because this distribiution of p_grid is what it is looking at, and this has been
+      #sampled accordingn to likelihood!
+      
+      hist(mydf$p_grid)
+      
+```
+
+# Loss function
+
+A loss function is a rule that tells you the cost associated with using any
+particular point estimate.
+Calculating expected loss for any given decision means using the posterior to average
+over our uncertainty in the true value. Of course we don’t know the true value, in most
+cases.
+In order to decide upon a point estimate, a single-value summary of the posterior distribution, we need to pick a loss function.
+The two most common examples are the absolute loss, which leads to the median as the point estimate, and the quadratic loss (d -p)^2 which leads to the posterior mean� p)2, which leads  (mean(samples)) as the point estimate.
+When the posterior distribution is symmetrical and normal-looking, then the median and
+mean converge to the same point, which relaxes some anxiety we might have about choosing
+a loss function
+
+```{r lossfunction}
+mydf %>% 
+  mutate(loss = posterior * abs(0.5 - p_grid)) %>% 
+  summarise(`expected loss` = sum(loss))
+
+#Not using data frame here - just vectors
+loss <- sapply( p_grid , function(d) sum( posterior*abs( d - p_grid ) ) )
+p_grid[ which.min(loss) ]
+
+```
+
+# Simulations
+
+Lots of purposes - not just power!
+
+(1) Model design. We can sample not only from the posterior, but also from the prior.
+Seeing what the model expects, before the data arrive, is the best way to understand
+the implications of the prior. We’ll do a lot of this in later chapters, where there will
+be multiple parameters and so their joint implications are not always very clear.
+(2) Model checking. After a model is updated using data, it is worth simulating implied
+observations, to check both whether the fit worked correctly and to investigate
+model behavior.
+(3) Software validation. In order to be sure that our model fitting software is working,
+it helps to simulate observations under a known model and then attempt to recover
+the values of the parameters the data were simulated under.
+4) Research design. If you can simulate observations from your hypothesis, then you
+can evaluate whether the research design can be effective. In a narrow sense, this
+means doing power analysis, but the possibilities are much broader.
+(5) Forecasting. Estimates can be used to simulate new predictions, for new cases and
+future observations. These forecasts can be useful as applied prediction, but also
+for model criticism and revision.
+
+```{r using_rbinom}
+dummy_w <- rbinom( 1e5 , size=2 , prob=0.7 )
+table(dummy_w)
+table(dummy_w)/1e5
+
+#Just to illustrate rbinom
+
+#Now with globe-tossing and more trials - 9 trials, p .7 for water
+
+dummy_w <- rbinom( 1e5 , size=9 , prob=0.7 ) 
+simplehist( dummy_w , xlab="dummy water count" )
+
+```
+
+Model checking
+
+1. Did software work? Results in line with expectation
+2. Is model adequate?
+Goal is to assess exactly how the model fails to describe the data, as a path towards model comprehension, revision, and improvement.
+All models fail in some respects: don't want to just redescribe data.
+Let’s do some basic model checks, using simulated observations for the globe tossing
+model. The observations in our example case are counts of water, over tosses of the globe.
+The implied predictions of the model are uncertain in two ways, and it’s important to be
+aware of both.
+First, there is observation uncertainty. For any unique value of the parameter p, there
+is a unique implied pattern of observations that the model expects. These patterns of observations are the same gardens of forking data that you explored in the previous chapter.
+These patterns are also what you sampled in the previous section. There is uncertainty in the
+predicted observations, because even if you know p with certainty, you won’t know the next
+globe toss with certainty (unless p = 0 or p = 1).
+Second, there is uncertainty about p. The posterior distribution over p embodies this
+uncertainty. And since there is uncertainty about p, there is uncertainty about everything
+that depends upon p. The uncertainty in p will interact with the sampling variation, when
+we try to assess what the model tells us about outcomes
+For each possible value of the parameter p, there is an implied distribution of outcomes. So if you were to compute the sampling distribution of outcomes at each value of p, then you could average all of these prediction distributions together, using then posterior probabilities of each value of p, to get a posterior predictive distribution
+
+```{r postpredictive}
+w <- rbinom( 1e4 , size=9 , prob=samples ) #so w is integer values from 0 to 9
+#For each sampled value, a random binomial observation is generated.
+
+plot(w,samples) #added by me ; samples is probabilities
+par(mfrow=c(2,1))
+hist(w)
+hist(samples)
+
+#Discusses also dependencies in the data
+```
+
+```{r exercise3_5}
+#This script is provided
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep( 1 , 1000 )
+likelihood <- dbinom( 6 , size=9 , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+set.seed(100)
+samples <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+
+hist(samples)
+
+#3E1. How much posterior probability lies below p = 0.2?
+
+e1 <- length(which(samples < .2))/length(samples)
+e1
+#.0004
+
+#3E2. How much posterior probability lies above p = 0.8?
+e2 <- length(which(samples > .8))/length(samples)
+e2
+#.112
+
+#3E3. How much posterior probability lies between p = 0.2 and p = 0.8?
+
+1-e2-e1
+#.888
+
+#3E4. 20% of the posterior probability lies below which value of p?
+quantile( samples , .2 )
+
+#3E5. 20% of the posterior probability lies above which value of p?
+quantile( samples , .8 )
+
+#3E6. Which values of p contain the narrowest interval equal to 66% of the posterior probability?
+HPDI( samples , prob=0.66 )
+
+# 0.5085085 0.7737738 
+
+#3E7. Which values of p contain 66% of the posterior probability, assuming equal posterior probability both below and above the interval?
+  
+PI( samples , prob=0.66 )
+#0.5025025 0.7697698 
+
+```
+
+Medium difficulty
+
+```{r ex3med}
+#3M1. Suppose the globe tossing data had turned out to be 8 water in 15 tosses. Construct the posterior distribution, using grid approximation. Use the same flat prior as before.
+
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep( 1 , 1000 )
+likelihood <- dbinom( 8 , size=15 , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+plot(p_grid,posterior)
+
+#3M2. Draw 10,000 samples from the grid approximation from above. Then use the samples to calculate the 90% HPDI for p.
+set.seed(100)
+samples <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+
+hist(samples)
+HPDI( samples , prob=0.9 )
+#0.3343343 0.7217217 
+
+#3M3. Construct a posterior predictive check for this model and data. This means simulate the distribution of samples, averaging over the posterior uncertainty in p. What is the probability of observing 8 water in 15 tosses?
+
+w <- rbinom( 1e4 , size=9 , prob=samples ) #so w is integer values from 0 to 9
+#For each sampled value, a random binomial observation is generated.
+
+plot(w,samples) #added by me ; samples is probabilities
+par(mfrow=c(2,1))
+hist(w)
+hist(samples)
+
+```
+
+3M4. Using the posterior distribution constructed from the new (8/15) data, now calculate the probability of observing 6 water in 9 tosses.
+
+```{r 3M4}
+myt <- table(w) #shows distribution of simulated data
+myposts <- myt/sum(myt)
+plot(myposts)
+pwater6 <- myposts[7]
+print(paste('Prob of water in 6 tosses = ',pwater6))
+```
+
+3M5. Start over at 3M1, but now use a prior that is zero below p = 0:5 and a constant above p = 0:5. This corresponds to prior information that a majority of the Earth’s surface is water. Repeat each problem above and compare the inferences. What difference does the better prior make? If it helps, compare inferences (using both priors) to the true value p = 0:7.
+
+```{r 3M5}
+#3M1a. Suppose the globe tossing data had turned out to be 8 water in 15 tosses. Construct the posterior distribution, using grid approximation. Use the same flat prior as before.
+
+# First save original values so we can compare.
+likelihood0 <- likelihood
+posterior0 <- posterior
+samples0 <- samples
+
+#set parameters so can print output for both vertically
+par(mfrow=c(2,1))
+#now recompute with new prior
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- ifelse( p_grid < 0.5 , 0 , 1 ) #changed line!
+likelihood <- dbinom( 8 , size=15 , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+#NB plots look similar, but need to put on same scale!
+plot(p_grid,posterior0,main='Original flat prior',type='l',ylim=c(0,.006))
+plot(p_grid,posterior,main='New prior',type='l',ylim=c(0,.006))
+```
+
+```{r 3M2a}
+
+#3M2a. Draw 10,000 samples from the grid approximation from above. Then use the samples to calculate the 90% HPDI for p.
+par(mfrow=c(2,1))
+set.seed(100)
+samples <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+
+hp0 <- HPDI( samples0 , prob=0.9 )
+hp0text <-paste('HPDI .9 is ',round(hp0[1],3),'-',round(hp0[2],3))
+hp <- HPDI(samples,prob=.9)
+hptext <-paste('HPDI .9 is ',round(hp[1],3),'-',round(hp[2],3))
+
+hist(samples0,main='original flat prior',ylim=c(0,2000),xlim=c(0,1))
+text(.25,1700,hp0text, cex=0.6,  col="red")  #first 2 values are x and y coords - just selected to make this fit on graph ok
+hist(samples,main='new prior',ylim=c(0,2000),xlim=c(0,1))
+text(.25,1700,hptext, cex=0.6,  col="red") 
+
+```
+
+
+```{r 3m3a}
+#3M3a. Construct a posterior predictive check for this model and data. This means simulate the distribution of samples, averaging over the posterior uncertainty in p. What is the probability of observing 8 water in 15 tosses?
+
+w <- rbinom( 1e4 , size=9 , prob=samples ) #so w is integer values from 0 to 9
+#For each sampled value, a random binomial observation is generated.
+
+par(mfrow=c(2,1))
+hist(samples0,main='Original flat prior')
+hist(samples,main='New prior')
+
+#3M34a
+myt0 <- myt #copy original value
+myt <- table(w) #shows distribution of simulated data
+myposts <- myt/sum(myt)
+plot(myposts)
+pwater6 <- myposts[7]
+print(paste('Prob of water in 6 tosses = ',pwater6))
+```
+
+So I am starting to understand the point of the model testing.
+It had seemed inevitable that you'd get the same answer, and so pointless. 
+But, as the sequential example illustrates, this is all about model assumptions.
+The starting model assumed independence of observations - if they weren't independent, then the agreement may not be good.
+
+(In fact, echoes here of my handedness simulations!)
+
+
+3M6. Suppose you want to estimate the Earth’s proportion of water very precisely. Specifically, you want the 99% percentile interval of the posterior distribution of p to be only 0.05 wide. This means the distance between the upper and lower bound of the interval should be 0.05. How many times will you have to toss the globe to do this?
+
+OK - so this seems like a power calculation....
+Does that mean that I just simulate zillions of times to find out when we get that interval?
+
+But also, won't it depend on what the true value is?
+It will also depend on prior.
+I may be overthinking this....
+
+```{r 3M6}
+#Start by taking a specific value, .6, and the new prior, and work it out for that value
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+
+wvals <- c(.6,.7,.8)
+mypi<-data.frame(matrix(NA, nrow=4*wvals*2,ncol=5))
+colnames(mypi)<-c('true','Nsamples','lower','upper','prior')
+run <- 0
+
+for (i in c(2000,2200,2300,2400)){  #started with 1e2,1e3,1e4,1e5, now homing in
+  for (w in wvals){
+    for (p in 1:2){ #run with both priors
+       prior <- rep(1,1000) #equal prior
+       if(p==2){
+       prior <- ifelse( p_grid < 0.5 , 0 , 1 ) }
+  run<-run+1
+  likelihood <- dbinom( w*i , size=i , prob=p_grid )
+  posterior <- likelihood * prior
+  posterior <- posterior / sum(posterior)
+  samples <- sample( p_grid , prob=posterior , size=1e5 , replace=TRUE )
+  mypi[run,3:4] <- PI(samples,prob=.99)
+  mypi[run,2] <- i
+  mypi[run,1] <- w
+  mypi[run,5] <- p
+   }
+  }
+}
+mypi$diff <- mypi[4]-mypi[3]
+mypi$good <- 0
+w<-which(mypi$diff<.05)
+mypi$good[w] <-1
+
+mypi
+#indicates value is between 1e3 and 1e4
+#So could hunt around in that interval - have now extended script to hunt around with various true values - sample comes in at 2500, with biased prior
+
+#My guess is this is not what was intended ....
+```
+Interesting that with these v large Ns, no difference with the two types of prior.
+I thought this was an error, but if we drop down to much smaller sample size, then they do differ.
+
+# Chapter 3 Hard problems
+
+(Data as in chunk below)
+3H1. Using grid approximation, compute the posterior distribution for the probability of a birth
+being a boy. Assume a uniform prior probability. Which parameter value maximizes the posterior
+probability?
+
+```{r ch3hard_1_2}
+#3H1
+
+birth1 <- c(1,0,0,0,1,1,0,1,0,1,0,0,1,1,0,1,1,0,0,0,1,0,0,0,1,0,
+0,0,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,0,1,1,0,1,0,0,0,0,0,0,0,
+1,1,0,1,0,0,1,0,0,0,1,0,0,1,1,1,1,0,1,0,1,1,1,1,1,0,0,1,0,1,1,0,
+1,0,1,1,1,0,1,1,1,1)
+birth2 <- c(0,1,0,1,0,1,1,1,0,0,1,1,1,1,1,0,0,1,1,1,0,0,1,1,1,0,
+1,1,1,0,1,1,1,0,1,0,0,1,1,1,1,0,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,0,1,1,0,1,1,0,1,1,1,0,0,0,0,0,0,1,0,0,0,1,1,0,0,1,0,0,1,1,
+0,0,0,1,1,1,0,0,0,0)
+
+n.boy <- (sum(birth1)+sum(birth2))
+n.all <- (length(birth1)+length(birth2))
+
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep( 1 , 1000 )
+likelihood <- dbinom( n.boy , n.all , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+plot(p_grid,posterior)
+
+#Find p_grid value that maximises posterior
+p_grid[ which.max(posterior) ]
+
+#3H2. Using the sample function, draw 10,000 random parameter values from the posterior distribution you calculated above. Use these samples to estimate the 50%, 89%, and 97% highest posterior density intervals.
+
+ samples <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+ 
+HPDI(samples,.5)
+HPDI(samples,.89)
+HPDI(samples,.97)
+
+
+
+```
+
+Additional problems
+3H3. Use rbinom to simulate 10,000 replicates of 200 births. You should end up with 10,000 numbers, each one a count of boys out of 200 births. Compare the distribution of predicted numbers of boys to the actual count in the data (111 boys out of 200 births). There are many good ways to visualize the simulations, but the dens command (part of the rethinking package) is probably the easiest way in this case. Does it look like the model fits the data well? That is, does the distribution of predictions include the actual observation as a central, likely outcome?
+
+3H4. Now compare 10,000 counts of boys from 100 simulated first borns only to the number of boys in the first births, birth1. How does the model look in this light?
+
+3H5. The model assumes that sex of first and second births are independent. To check this assumption, focus now on second births that followed female first borns. Compare 10,000 simulated counts of boys to only those second births that followed girls. To do this correctly, you need to count the number of first borns who were girls and simulate that many births, 10,000 times. Compare the counts of boys in your simulations to the actual observed count of boys following girls. How does the model look in this light? Any guesses what is going on in these data?
+
+```{r 3h3}
+mysims <- rbinom( 1e4 , size=200 , prob=samples )
+dens(mysims)
+
+mysims1 <- rbinom( 1e4 , size=100 , prob=samples )
+dens(mysims1)
+abline(v=sum(birth1),col='blue') #value for first borns
+abline(v=sum(birth2),col='red') #value for 2nd borns
+
+#3H4
+#repeat simulation just for 1st borns
+
+p_grid <- seq( from=0 , to=1 , length.out=1000 ) 
+prior <- rep( 1 , 1000 )
+n.boy1<- sum(birth1)
+n.all1 <- length(birth1)
+likelihood <- dbinom( n.boy1 , n.all1 , prob=p_grid )
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+ samples1 <- sample( p_grid , prob=posterior , size=1e4 , replace=TRUE )
+ mysims1 <- rbinom( 1e4 , size=100 , prob=samples1 )
+dens(mysims1)
+abline(v = n.boy1)
+
+#if sim based on birth 1, then is spot on
+
+#3H5 
+#My approach to this would be to create new variable with pairs and look at distribution!
+
+birthpair <- 10*birth1+birth2
+t <- table(birthpair)
+#if independent, should be close to equal N (given .55 males)
+chisq.test(as.matrix(t))
+
+#But we're supposed to do this with simulation, so....
+
+
+
+
+
+```
