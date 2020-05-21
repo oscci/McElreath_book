@@ -2,7 +2,7 @@
 title: "R Notebook"
 output: html_notebook
 ---
-
+updated 21 May 2020
 ## Bishop notes on McElreath, Chapter 5
 Multiple regression.
 
