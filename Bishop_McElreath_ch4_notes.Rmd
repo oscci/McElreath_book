@@ -9,6 +9,7 @@ require(tidyverse)
 ```
 https://github.com/oscci/McElreath_book
 
+Updated May 2020
 In our discussions, this chapter was challenging. Does help to also view lectures 3-4 which cover the same material. 
 
 NB This is a Notebook file. You can run each chunk by just clicking on the little green arrow in top right of chunk window. And you can view the output by clicking the Preview option on the bar at the top. This shows the html output in a separate pane.
