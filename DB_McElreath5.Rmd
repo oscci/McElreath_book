@@ -29,7 +29,7 @@ In lecture, M says what we have been doing, without realising it, is Bayesian ne
 
 When variables are standardized, means are zero, and expect the intercept, alpha also to be zero: this is the mean (standardized)divorce rate when both of the predictors are average (ie zero on this scale)
 
-```{r code5.1to3}
+```{r code5.1and3}
 library(rethinking)
 data(WaffleDivorce)
 d <- WaffleDivorce
@@ -511,7 +511,7 @@ print(precis(m5.5))
 
 M also plots the counterfactual - this shows that if one variable held constant, you can see the effect of the other. I'll try to do this by analogy with the code from 5.19
 
-```{r counterfactualplot}
+```{r counterfactualplot1}
 
 #assume we still have primate data in memory with z-scores for K N and M
 
@@ -600,7 +600,8 @@ This model allows us to test the 2nd part of the claim, because b1 would be sign
 ## 5E3
 Write down a multiple regression to evaluate the claim: Neither amount of funding nor size of laboratory by itself is a good predictor of time to PhD degree, but together these variables are both postively associated with time to degree. Indicate which side of zero each slope parameter should be on.
 
-So this is a masked relationship. You'd treat it like the examples in code 5.35, 5.38, 5.39, 5.40, where you compare the models that included IVs of F alone, S alone or both F and S. 
+So I originally said that this is a masked relationship. But it isn't! Both are positively correlated with outcome. 
+But I think you still treat it like the examples in code 5.35, 5.38, 5.39, 5.40, where you compare the models that included IVs of F alone, S alone or both F and S. 
 
 ## 5E4
 Why is this designated as easy?!  
