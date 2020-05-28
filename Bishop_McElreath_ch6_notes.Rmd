@@ -1,0 +1,850 @@
+---
+title: "CH6 Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+require(rethinking)
+data(Hurricanes)
+```
+
+Uses -ve correlation between newsworthiness and trustworthiness to demonstrate how selection can induce a correlation  
+
+Paper published if either very trustworthy or very newsworthy; so if no correlation really, will induce a correlation. Compensatory.
+
+Same thing can happen within multiple regression if you stratify on a predictor.  
+Selection-distortion effect or Berkson's paradox.  
+
+DB: I encountered Berkson's paradox as an explanation for some kinds of comorbidity, which tend to be more common in clinical samples than population sample - e.g. if dyslexia and ADHD were really independent, but each of them increased the likelihood of getting referred to a clinic, then you'd find them associated in clinic samples, but not in population samples.  
+
+
+Adding variables to models can create confounds. 
+
+Here will cover Fork, Pipe, Collider, Descendant  
+
+Each can be deconfounded.  
+
+# Fork
+: variable that is common cause of others : e.g. median age at marriage that affects both marriage rate and divorce rate: create spurious confound
+
+  X <- Z -> Y
+  
+  deconfound fork by conditioning on Z.
+  
+  Once you know Z there is no residual correlation between X and Y
+  
+# Pipe
+X -> Z -> Y
+mediation.  
+If you condition on Z it will knock out effect of X on Y.
+You may control away the real causal variable.  
+
+From data alone cannot tell difference between pipe and fork.
+
+Experiment: Post-treatment bias. 
+X is treatment
+Z is post-treatment variable - consequence of treatment, on the path to outcome of interest
+Y is outcome
+If you control for Z you may wipe out effect of X
+
+# Collider
+
+X -> Z <- Y
+Z as common result of X and Y
+X and Y are independent, but if you condition on Z you get spurious correlation.
+
+eg from basketball.  
+Being tall is an advantage.
+But in basketball team, no effect of height on scoring - distortion by selection effect, -ie if not tall but in team must be good in other ways.
+
+Regressions don't have arrows. That's why you need DAG.
+
+Conditioning on a collider opens a backdoor.
+May be unobserved variable. 
+
+# Descendant
+Open path unless you condition on Z
+
+# Code from the chapter, with DB comments
+```{r code6.1}
+set.seed(1914)
+N <- 200 # num grant proposals
+p <- 0.1 # proportion to select
+# uncorrelated newsworthiness and trustworthiness
+nw <- rnorm(N)
+tw <- rnorm(N)
+# select top 10% of combined scores
+s <- nw + tw # total score
+q <- quantile( s , 1-p ) # top 10% threshold
+selected <- ifelse( s >= q , TRUE , FALSE )
+cor( tw[selected] , nw[selected] )
+#I've added a line to plot result
+plot(tw,nw,col=(1+selected))
+
+```
+
+I'm curious about what happens if there is selection only on newsworthiness.  Then no correlation in the selected group.
+```{r code6.1a}
+set.seed(1914)
+N <- 200 # num grant proposals
+p <- 0.1 # proportion to select
+# uncorrelated newsworthiness and trustworthiness
+nw <- rnorm(N)
+tw <- rnorm(N)
+# select top 10% of combined scores
+s<-nw
+q <- quantile( s , 1-p ) # top 10% threshold
+selected <- ifelse( s >= q , TRUE , FALSE )
+cor( tw[selected] , nw[selected] )
+#I've added a line to plot result
+plot(tw,nw,col=(1+selected))
+
+```
+## Multicollinearity
+
+"Multicollinearity means very strong correlation between two or more predictor variables. The consequence of it is that the posterior distribution will seem to suggest that none of the variables is reliably associated with the outcome, even if all of the variables are in reality strongly associated with the outcome."
+
+Leg and height example.  Simulate 3 measures: height, left leg and right leg
+
+```{r code6.2}
+N <- 100 # number of individuals 
+set.seed(909)
+height <- rnorm(N,10,2) # sim total height of each, mean 10 , SD 2
+leg_prop <- runif(N,0.4,0.5) # leg as proportion of height - random number between .4 and .5
+leg_left <- leg_prop*height + # sim left leg as proportion + error
+rnorm( N , 0 , 0.02 ) # this bit is the error term - list of small random numbers with mean 0 and SD .02 
+leg_right <- leg_prop*height + # sim right leg as proportion + error
+rnorm( N , 0 , 0.02 )
+# combine into data frame
+d <- data.frame(height,leg_left,leg_right)
+```
+
+Put both leg lengths in model to predict height. Deliberately using vague priors as don't want them to affect result.
+
+```{r code6.3}
+m6.1 <- quap(
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + bl*leg_left + br*leg_right ,
+a ~ dnorm( 10 , 100 ) ,
+bl ~ dnorm( 2 , 10 ) ,
+br ~ dnorm( 2 , 10 ) ,
+sigma ~ dexp( 1 )
+) ,
+data=d )
+precis(m6.1)
+```
+I've added here alternative model where prediction is from mean of L+R leg, which gives a sensible result
+```{r code6.3a}
+d$meanleg<-(d$leg_left+d$leg_right)/2
+m6.1a <- quap(
+alist(
+height ~ dnorm( mu , sigma ) ,
+mu <- a + b*meanleg ,
+a ~ dnorm( 10 , 100 ) ,
+b ~ dnorm( 2 , 10 ) ,
+sigma ~ dexp( 1 )
+) ,
+data=d )
+precis(m6.1a)
+```
+I'll do plots for both m6.1 and m6.1a
+
+```{r plots6.1}
+par(mfrow=c(1,2)) #plot in grid of 1x2
+plot(precis(m6.1),main='Model6.1')
+plot(precis(m6.1a),main='Model6.1a')
+
+par(mfrow=c(1,1)) 
+post <- extract.samples(m6.1) #code6.5
+#post has estimates of a, bl, br, sigma for 10000 samples
+head(post)
+
+plot( bl ~ br , post , col=col.alpha(rangi2,0.1) , pch=16,main='Model 6.1:  Posterior distribution of association\n of each leg with height' )
+
+#We've already computed mean (rather than sum), so can just adapt the code 6.6
+posta <- extract.samples(m6.1a) #code6.5
+dens( posta$b , col=rangi2 , lwd=2 , xlab="mean of bl and br" )
+
+#But this is actually slopes of the mean L and R leg.
+#Is this the same as mean of the slopes, which is what is done in 6.6? (!!)
+
+#Let's try code 6.6
+sum_blbr <- post$bl + post$br
+dens( sum_blbr , col='red', lwd=1 , xlab="sum of bl and br",add=T )
+
+#Looks like mean of slopes is similar enough to slope of means - any variation just from sampling I suspect
+
+```
+
+Moves on to the primate milk dataset for a less obvious example of how correlated variables affect regression results.
+
+```{r code6.8}
+library(rethinking)
+data(milk)
+d <- milk
+d$K <- scale( d$kcal.per.g )
+d$F <- scale( d$perc.fat )
+d$L <- scale( d$perc.lactose )
+```
+
+Start with 2 separate regressions: dv is K, predictors are F and L
+(At this point I tried to generate the code for quap from memory, rather than copy and pasting. It was a car crash....)
+```{r code6.9}
+#prediction from percent fat
+m6.3 <- quap(
+  alist(
+    K ~ dnorm(mu, sigma),
+    mu <- a + bF*F,
+    a ~ dnorm(0,.2),
+    bF ~ dnorm(0,.5),
+    sigma ~ dexp(1)
+    
+  ),data =d
+)
+#prediction from % lactose
+m6.4 <- quap(
+  alist(
+    K ~ dnorm(mu, sigma),
+    mu <- a + bL*L,
+    a ~ dnorm(0,.2),
+    bL ~ dnorm(0,.5),
+    sigma ~ dexp(1)
+    
+  ),data =d
+)
+
+precis(m6.3)
+precis(m6.4)
+
+#My own code to plot just the 3 vars of interst, ie last 3 cols in d
+ncols<-ncol(d)
+pairs(d[,(ncols-2):ncols])
+#Plot identical to figure 6.3, but M plotted the raw values, and these are standardized so just rescaled
+```
+
+Shows strong inverse correlation between lactose and fat.
+
+Now we put both in the model.
+
+```{r code6.10}
+m6.5 <- quap(
+  alist(
+    K ~ dnorm(mu,sigma),
+    mu <- a + bF*F + bL*L,
+    a ~ dnorm(0,.2),
+    bF ~ dnorm(0,.5),
+    bL ~ dnorm(0,.5),
+    sigma ~ dexp(1)
+  ),data=d)
+precis(m6.5)
+plot(coeftab(m6.3,m6.4,m6.5))
+
+```
+
+Methods for handling multicollinearity.  Need to take causal perspective.   
+"Some fields actually teach students to inspect pairwise correlations before fitting a model, to identify and drop highly correlated predictors. This is a mistake. Pairwise correlations are not the problem. It is the conditional associations—not correlations—that matter. And even then, the right thing to do will de- pend upon what is causing the collinearity. The associations within the data alone are not enough to decide what to do."  
+
+I just wondered whether the tradeoff was at least in part because both L and F were percentages, so if one goes up, the other must go down.  
+But M has a more functional explanation that postulates nursing frequency as a factor that determines milk composition. Argues this will determine milk density D - and if we could observe that directly, we'd be better just predicting from that. 
+
+### IGNORE THIS BIT IF YOU WANT TO JUST CONTINUE WITH BOOK CONTENT   
+
+Hmm - I think that because we are working with percentages, the correlation is at least partly an artefact of how measured. Consider this:
+
+```{r bishopdigression}
+#What percentage of milk content is either fat or lactose?
+d$percLF <- d$perc.fat+d$perc.lactose
+require(psych)
+describe(d$percLF)
+
+```
+We see that fat and  lactose between them account for at least 75% of milk content.  
+So if we want to see their independent effects, I'd be inclined to start with % fat, and then take lactose as a percentage of what's left, after removing fat from consideration. I.e.
+
+```{r bishopdigressionctd}
+#standardized F will be same as before, as we are working with measured %
+d$residpercL <- d$perc.lactose/(100-d$perc.fat)
+d$RL <- scale(d$residpercL)
+cor(d$F,d$RL) #Variables still correlated but now there is no artefactul association.
+
+m6.5a <- quap(
+  alist(
+    K ~ dnorm(mu,sigma),
+    mu <- a + bF*F + bL*RL,
+    a ~ dnorm(0,.2),
+    bF ~ dnorm(0,.5),
+    bL ~ dnorm(0,.5),
+    sigma ~ dexp(1)
+  ),data=d)
+
+precis(m6.5a)
+plot(coeftab(m6.3,m6.4,m6.5,m6.5a))
+```
+Model 6.5a addresses a different question from model 6.5 - I think it avoids statistical confound between fat and lactose that otherwise is there because of use of % measurement.
+
+### BACK TO THE BOOK!
+
+Multicollinearity related to non-identifiability.  
+Structure of data makes it impossible to identify value of a parameter.
+
+"Comparing the posterior to the prior can therefore be a good idea, a way of seeing how much information the model extracted from the data. When the posterior and prior are similar, it doesn’t mean the calculations are wrong—you got the right answer to the question you asked. But it might lead you to ask a better question."
+
+### Simulating collinearity
+
+```{r code6.12}
+library(rethinking)
+data(milk)
+d <- milk
+
+#DB addition: This uses a formula to create correlated variables that is worth unpacking a bit before launching in.
+#Let's create 100 values of x (as z scores)
+x <- rnorm(100)
+r <- .6 #try changing this correlation value
+y <- rnorm(100,x*r,sqrt((1-r^2)))  #generates y-values correlated with x-values; uses x and r to specify mean of distribution, and r then features in formula for SD.
+
+describe(x)
+describe(y)
+cor(x,y)
+#You should find that both x and y have means around zero and SDs around 1, and their correlation is around r. If you simulate 100000 rather than 100 values, these parameters will be very close.
+
+#The formula used below is essentially the same, with x being d$perc.fat (and confusingly, the value I called y above is now called x...). Because x is not a z-score, the formula for SD is a bit more complicated and needs to include multipying by var(d$perc.fat). Since variance of a zscore is 1, we could drop that in the formula above.
+
+#In R you can use the mvrnorm function to generate correlated variables, but this formula is easy to use if you just have paired values.
+
+#We have a chain of functions here. Sim.coll simulates pairs of values.
+#Rep.sim.coll just does that repeatedly
+
+sim.coll <- function( r=0.9 ) {
+    d$x <- rnorm( nrow(d) , 
+                  mean=r*d$perc.fat ,
+        sd=sqrt( (1-r^2)*var(d$perc.fat) ) ) #NB these lines for mean and SD will generate a variable, y, from a variable x, that has correlation between x and y of r and y has same SD as x
+    m <- lm( kcal.per.g ~ perc.fat + x , data=d )
+    sqrt( diag( vcov(m) ) )[2] # Variances are on diagonal of covariance matrix, and so sd of values on diagonal give you sds 
+}
+
+rep.sim.coll <- function( r=0.9 , n=100 ) {
+    stddev <- replicate( n , sim.coll(r) )
+    mean(stddev)
+}
+#Here we just call rep.sim.coll with different values of r specified - could do it in a loop but using sapply achieves the same result much more elegantly
+r.seq <- seq(from=0,to=0.99,by=0.01)
+stddev <- sapply( r.seq , function(z) rep.sim.coll(r=z,n=100) )
+plot( stddev ~ r.seq , type="l" , col=rangi2, lwd=2 , xlab="correlation",ylab="average SD from 100 regressions",main="Inflation of SD of slope estimates when variables are correlated" )
+
+```
+
+## Post treatment bias
+People worry about omitting key predictors - and this can be a problem. But also may mess up model by including predictors that cause bias.  One e.g. is post-treatment bias.  
+
+This seems pretty straightforward to me. Here is e.g. from M's book.
+
+```{r code6.13}
+#simulate some data, using binomial distribution to assign fungus status after treatment; h0 is initial height, h1 is height after treatment
+set.seed(71)
+# number of plants
+N <- 100
+# simulate initial heights
+h0 <- rnorm(N,10,2)
+# assign treatments and simulate fungus and growth
+treatment <- rep( 0:1 , each=N/2 )
+fungus <- rbinom( N , size=1 , prob=0.5 - treatment*0.4 )
+h1 <- h0 + rnorm(N, 5 - 3*fungus)
+# compose a clean data frame
+d <- data.frame( h0=h0 , h1=h1 , treatment=treatment , fungus=fungus )
+precis(d)
+```
+
+### Now we need to generate prior
+We know data-generating process in this case, but in real world we don't, so have to think it through to get a sensible prior.  
+Expect plants to be taller at t1 than t0.  
+Can put parameters on a scale of proportion of height at t0.
+
+$$h_1,_i \sim Normal(\mu_i, \sigma)$$
+$$\mu_i = h_0,_i *  p$$
+So p is h1/h0.
+If p is 1, height is the same as before, if p = 2, doubled in height.  
+If we centre prior on 1, that implies expectation of no change.
+(Says we should allow p < 1 in case we kill the plants, but I would query whether we could then measure their height meaningfully !)  
+Have to ensure p > 0 (it is a proportion).  
+So we can use Log_normal distribution; is always positive.
+
+```{r code6.14}
+sim_p <- rlnorm(1e4,0,.25)
+precis(data.frame(sim_p))
+```
+
+Gives sensible range.
+```{r code6.15}
+m6.6 <- quap(
+  alist(
+    h1 ~ dnorm(mu,sigma),
+    mu <- h0*p,
+    p ~ dlnorm(0,.25),
+    sigma ~ dexp(1)
+  ),data=d)
+precis(m6.6)
+
+```
+Now we add treatment and fungus
+
+Parameters on proportion scale as they are changes in proportion growth. Can make linear model.
+(This is another example where book gets hard because he's trying to teach us 2 things at once: on the one hand, we have post-treatment bias, but he's also smuggling in use of proportional parameters in models).  
+
+```{r code6.16}
+m6.7 <- quap(
+    alist(
+        h1 ~ dnorm( mu , sigma ),
+        mu <- h0 * p,
+        p <- a + bt*treatment + bf*fungus,
+        a ~ dlnorm( 0 , 0.2 ) ,
+        bt ~ dnorm( 0 , 0.5 ),
+        bf ~ dnorm( 0 , 0.5 ),
+        sigma ~ dexp( 1 )
+    ), data=d )
+precis(m6.7)
+```
+
+Gives impression that treatment is ineffective and fungus hurts growth.  
+Problem is that fungus is mostly consequence of treatment.  
+For valid model, need to omit fungus.  
+
+```{r code6.17}
+m6.8 <- quap(
+    alist(
+        h1 ~ dnorm( mu , sigma ),
+        mu <- h0 * p,
+        p <- a + bt*treatment ,
+        a ~ dlnorm( 0 , 0.2 ) ,
+        bt ~ dnorm( 0 , 0.5 ),
+        sigma ~ dexp( 1 )
+    ), data=d )
+precis(m6.8)
+```
+
+May also want to measure fungus as it gives information about mechanism.
+Need to draw the model.  
+
+```{r code6.18}
+library(dagitty)
+plant_dag <- dagitty( "dag {
+    H_0 -> H_1
+    F -> H_1
+    T -> F
+}")
+coordinates( plant_dag ) <- list( x=c(H_0=0,T=2,F=1.5,H_1=1) ,
+                                  y=c(H_0=0,T=0,F=0,H_1=0) )
+drawdag( plant_dag )
+
+```
+
+Note how model shows F blocking effect of T on H1.  
+In DAG terminology, conditioning on F induces D-separation (d stands for directional).  
+D-separation means there is no path connecting 2 variables. H1 is d-separated from T, but only if we condition on F.
+
+```{r code6.19}
+impliedConditionalIndependencies(plant_dag)
+```
+Shows F is independent of H0
+H0 is independent of T
+H1 is independent of T if we condition on F
+
+In observational studies harder to tell which variables are pre-treatment or post-treatment.
+
+Another type of DAG: suppose there is an unobserved variable, M (for moisture), that affects both height and fungus.
+Then regression of H1 on T shows no association, but with F in the model there is association. Here is model modified so fungus has no influence on growth but moisture influences by H1 and F.
+
+First i will draw the DAG.
+
+```{r bishopDAG}
+moisture_dag <- dagitty( "dag {
+    H_0 -> H_1
+    M -> H_1
+    T -> F
+    M -> F
+}")
+coordinates( moisture_dag ) <- list( x=c(H_0=0,T=2,F=1.5,H_1=1,M=1.25) ,
+                                  y=c(H_0=0,T=0,F=0,H_1=0,M=.25) )
+drawdag( moisture_dag )
+impliedConditionalIndependencies(moisture_dag)
+
+```
+
+```{r code6.20}
+set.seed(71)
+N <- 1000
+h0 <- rnorm(N,10,2)
+treatment <- rep( 0:1 , each=N/2 )
+M <- rbern(N) #Random Sample from Bernoulli Distribution
+fungus <- rbinom( N , size=1 , prob=0.5 - treatment*0.4 + 0.4*M )
+h1 <- h0 + rnorm( N , 5 + 3*M )
+d2 <- data.frame( h0=h0 , h1=h1 , treatment=treatment , fungus=fungus )
+```
+
+He's done it again - smuggled in rbern. Had to check Wikipedia:
+Bernoulli distribution, named after Swiss mathematician Jacob Bernoulli,[1] is the discrete probability distribution of a random variable which takes the value 1 with probability p {\displaystyle p} p and the value 0 with probability q = 1 − p.
+
+Rerun model 6.7 with data from d2
+```{r code6.17a2}
+m6.7a <- quap(
+    alist(
+        h1 ~ dnorm( mu , sigma ),
+        mu <- h0 * p,
+        p <- a + bt*treatment + bf*fungus,
+        a ~ dlnorm( 0 , 0.2 ) ,
+        bt ~ dnorm( 0 , 0.5 ),
+         bf ~ dnorm( 0 , 0.5 ),
+        sigma ~ dexp( 1 )
+    ), data=d2 )
+precis(m6.7a)
+```
+
+```{r code6.17a}
+m6.8a <- quap(
+    alist(
+        h1 ~ dnorm( mu , sigma ),
+        mu <- h0 * p,
+        p <- a + bt*treatment ,
+        a ~ dlnorm( 0 , 0.2 ) ,
+        bt ~ dnorm( 0 , 0.5 ),
+        sigma ~ dexp( 1 )
+    ), data=d2 )
+precis(m6.8a)
+
+plot(coeftab(m6.7,m6.7a,m6.8,m6.8a))
+```
+
+Now looks like fungus had positive effect (model 6.7a).  
+Goodness of fit of model is not helpful here: need correct causal logic.
+
+## Collider bias
+
+T -> S <- N
+
+2 arrows point to S, means S is a collider.
+If you condition on a collider, it creates statistical association between its causes.  
+
+Have to pay attention to how we select our samples.
+Example of happiness and age and marriage (as in lecture) - probability of marriage depends on both age and happiness, so they become correlated.  
+I'm skipping the modeling here.
+
+Idea of unmeasured common causes creating collider bias.  
+Here consider relations bewteen grandparents, parents, children.
+Assume no influence of grandparents on children - just to simplify model.
+Dependent variable is educational achievement of child (C).
+Also unmeasured variable affecting parent and child (eg neighborhood)
+
+Start with DAG
+
+```{r bishopDAGa}
+parent_dag <- dagitty( "dag {
+    G -> P
+    P -> C
+    U -> P
+   U -> C
+}")
+coordinates( parent_dag ) <- list( x=c(G=0,P=1,C=1,U=1.5) ,
+                                  y=c(G=0,P=0,C=1,U=.5) )
+drawdag( parent_dag )
+impliedConditionalIndependencies(parent_dag)
+
+```
+Now P is a common consequence of G and U, so if we condition on P, it will bias inference about G → C, even if we never get to measure U. 
+Simulate this
+
+```{r code6.25-6}
+#so we start by specifying direct effects: I assume these are slopes?
+
+N <- 200  # number of grandparent-parent-child triads
+b_GP <- 1 # direct effect of G on P
+b_GC <- 0 # direct effect of G on C
+b_PC <- 1 # direct effect of P on C
+b_U<-2 #directeffectofUonPandC
+
+set.seed(1)
+U <- 2*rbern( N , 0.5 ) - 1  #this makes a binary effect
+G <- rnorm( N ) #G is not influenced by others, so no reg slope in the formula; just a set of zscores as will use default mean /SD
+P <- rnorm( N , b_GP*G + b_U*U ) #defined in terms of slopes
+C <- rnorm( N , b_PC*P + b_GC*G + b_U*U )
+d <- data.frame( C=C , P=P , G=G , U=U )
+
+#OK, before rushing on, I want to look at d
+head(d)
+describe(d)
+pairs(d)
+
+
+```
+
+I note that although they have means of approx zero, P and C have larger SDs, so are not z-scores. I guess we could scale them - but the way they are simulated here means that they have several influences on them which create more variability.  
+
+OK, now on to the quap. U is unobserved so doesn't feature in the model. 
+
+```{r code6.27}
+m6.11 <- quap(
+    alist(
+        C ~ dnorm( mu , sigma ), #child educ attainment
+        mu <- a + b_PC*P + b_GC*G,
+              a ~ dnorm( 0 , 1 ),
+        c(b_PC,b_GC) ~ dnorm( 0 , 1 ), #seems we have here a new way of coding quap to allocate 2 variables at the same time
+        sigma ~ dexp( 1 )
+    ), data=d )
+precis(m6.11)
+```
+
+Collider bias : gives negative effect of grandparents on children!
+This is because we have collider bias for P, which is affected both by G and C. So we are conditioning on a collider in our model.  
+
+Also see that effect of parents in model is almost 2x as big as we specified when simulating the data.
+No code given for figure 6.5, but I will try to do a rough approximation of it.
+
+```{r dofig6.5}
+b1 <- summary(lm(d$C[d$U==-1]~d$G[d$U==-1]))$coefficients[2]
+b2 <- summary(lm(d$C[d$U==1]~d$G[d$U==1]))$coefficients[2]
+b3 <- summary(lm(d$C~d$G))$coefficients[2]
+mylabel<-(paste0('For U -1, b = ',round(b1,3),'\n For U = 1, b = ',round(b2,3),'\nFor all cases, b = ',round(b3,3)))
+
+plot(d$C~d$G,col=2+d$U,main='Colour=unobserved U')
+text(-2,7,mylabel)
+
+```
+
+Hmm. I'm getting smaller value of b, but it is not made negative.
+I didn't scale C but I can't see how that should change things. 
+
+```{r dofig6.5a}
+d$Cs <- scale(d$C)
+d$Gs <- scale(d$G)
+b1 <- summary(lm(d$Cs[d$U==-1]~d$Gs[d$U==-1]))$coefficients[2]
+b2 <- summary(lm(d$Cs[d$U==1]~d$Gs[d$U==1]))$coefficients[2]
+b3 <- summary(lm(d$Cs~d$Gs))$coefficients[2]
+mylabel<-(paste0('For U -1, b = ',round(b1,3),'\n For U = 1, b = ',round(b2,3),'\nFor all cases, b = ',round(b3,3)))
+
+plot(d$Cs~d$Gs,col=2+d$U,main='Colour=unobserved U')
+text(-2,7,mylabel)
+
+```
+
+This remains a bit of a puzzle. M does focus just on middle range to make his point, but I doubt that explains it. Must have something different in my version. I am running out of time so am going to leave this here for now. I get the basic point.  Wondering if I just need a larger effect of U to show this convincingly? I suspect it is relatively rare for a collider to actually reverse an effect?
+
+Basic idea: once we know P, learning G invisibly tells us about U, and U is associated with C.  
+
+This is Simpson's paradox; where adding another predictor can reverse the direction of association.
+
+To isolate a causal path, we can run an experiment, but that is often not feasible - e.g. cannot randomly assign levels of education.
+
+But manipulation works because it removes effect of U.
+
+We can also condition on U - that will remove confounding as it blocks flow of information from 2nd path.
+Blocking confounding known as 'shutting the backdoor'.  
+
+Given a causal DAG alway possible to say which variables to control for in order to shut all backdoor paths.
+
+Fork:  X <- Z -> Y
+Pipe: X -> Z -> Y
+Collider: X -> Z <- Y
+
+Also descendant, which is like collider but with path out from Z to D.
+
+All DAGs built on these 4 types of causal relation.
+
+Recipe for variable to include:
+
+1) List all paths conneting X (potential cause of interest) and Y (the outcome).
+2) Classify paths by whether open or closed. Path is open unless it contains a collider.
+3) Classify each path by whether it is a backdoor path. A backdoor path has arrow entering X.
+4) If there is an open backdoor path, then look for variable(s) to condition on to close it if possible. 
+
+Can do this using dagitty! I've added code to draw DAG
+
+```{r code6.29}
+ library(dagitty)
+#Ooh , if we specify U as unobserved, it plots with a circle round it!
+dag_6.1 <- dagitty( "dag {
+    U [unobserved]
+    X -> Y
+    X <- U <- A -> C -> Y
+    U -> B <- C
+}")
+coordinates( dag_6.1 ) <- list( x=c(X=0,U=0,A=1,B=1,C=2,Y=2) ,
+                                  y=c(A=0,U=1,C=1,B=2,X=3,Y=3) )
+drawdag( dag_6.1)
+adjustmentSets( dag_6.1 , exposure="X" , outcome="Y" )
+
+```
+
+Shows that conditioning on C or A will suffice.
+B is a collider, so path already closed, and we should NOT condition on this.
+
+## Exercises
+
+6E1. 3 mechanisms by which multiple regression can produce false inferences about causal effects.
+True effect masked by mediator in pipe: X -> Y -> Z
+True effect masked by multicollinearity
+False effect induced - collider bias
+
+6E2. Provide an example from own research: association between ADHD and dyslexia could reflect biased sample: either problem raises likelihood of clinical referral.
+
+6E3. Pipe, Fork, Collider, Descendant
+
+Use daggity to check dependencies
+```{r ex6E3}
+require(dagitty)
+dagpipe <- dagitty("dag{
+  X ->Z
+  Z ->Y}")
+
+
+coordinates( dagpipe ) <- list( x=c(X=0,Z=1,Y=2) ,
+                                  y=c(X=0,Y=0,Z=0) )
+drawdag( dagpipe)
+adjustmentSets( dagpipe, exposure="X" , outcome="Y" )
+impliedConditionalIndependencies(dagpipe)
+
+dagfork <- dagitty("dag{
+  Z -> X
+  Z -> Y }")
+
+
+coordinates( dagfork ) <- list( x=c(X=0,Z=1,Y=2) ,
+                                  y=c(X=0,Y=0,Z=0) )
+drawdag( dagfork)
+adjustmentSets( dagfork, exposure="X" , outcome="Y" )
+impliedConditionalIndependencies(dagfork)
+
+dagcollider <- dagitty("dag{
+  X -> Z
+  Y -> Z }")
+coordinates( dagcollider ) <- list( x=c(X=0,Z=1,Y=2) ,
+                                  y=c(X=0,Y=0,Z=0) )
+drawdag( dagcollider)
+adjustmentSets( dagcollider, exposure="X" , outcome="Y" )
+impliedConditionalIndependencies(dagcollider)
+
+dagdescendant<- dagitty("dag{
+  X -> Z
+  Y -> Z 
+  Z -> D}")
+coordinates( dagdescendant ) <- list( x=c(X=0,Z=1,Y=2,D=1) ,
+                                  y=c(X=0,Y=0,Z=0,D=1) )
+drawdag( dagdescendant)
+adjustmentSets( dagdescendant, exposure="X" , outcome="Y" )
+impliedConditionalIndependencies(dagdescendant)
+```
+6E4. How is a biased sample like conditioning on a collider?
+If the bias means that whether or not you get into a sample depends on different factors in an either/or fashion 
+
+6M1. Modify the DAG on p 186 to include V, as unobserved cause of C and Y.
+Reanalyse the DAG
+
+```{r ex6M1}
+
+ library(dagitty)
+dag_6.1a <- dagitty( "dag {
+    U [unobserved]
+    V [unobserved]
+    X -> Y
+    X <- U <- A -> C -> Y
+    U -> B <- C
+    V -> C
+    V -> Y
+}")
+coordinates( dag_6.1a ) <- list( x=c(X=0,U=0,A=1,B=1,C=2,Y=2,V=3) ,
+                                  y=c(A=0,U=1,C=1,B=2,X=3,Y=3,V=2) )
+drawdag( dag_6.1a)
+adjustmentSets( dag_6.1a , exposure="X" , outcome="Y" )
+
+```
+
+Can we use Sewell's path-tracing rules here? 
+https://en.wikipedia.org/wiki/Path_analysis_(statistics)
+McElreath doesn't mention Sewell though I remember he featured in Pearl's Book of Why. In twin method, useful for computing predicted covariances between variables.
+How many paths connect X to Y? - what does he mean by 'connect' here. There are paths XUACY, XUBCY,XUACVY,XUBCVY as well as XY
+But if we use Sewell rules, then we only have XUACY and XY
+adjustmentSets indicates A as the one to condition on  
+In relation to Sewell, this is the point at which the one complex path turns round. Is that just a coincidence? Would need to check with other egs.
+This does not seem to work: top 2 examples in 6M3 have same paths, yet differ in causality
+
+6M3. More DAGs to decide what to adjust for.
+```{r ex6M3}
+
+ library(dagitty)
+dag_6m3<- dagitty( "dag {
+
+    X -> Y
+    Z -> X
+    Z -> Y
+    A -> Z
+  A -> Y
+}")
+coordinates( dag_6m3) <- list( x=c(X=0,Z=1,A=2,Y=2) ,
+                                  y=c(X=1,Y=1,Z=0,A=0) )
+drawdag( dag_6m3)
+adjustmentSets( dag_6m3 , exposure="X" , outcome="Y" )
+
+```
+So for this one the adjustment set is Z.
+With path tracing, we have XZY and XZAY.
+So if we took any turning point , we'd have Z and A, but in fact we only have Z to adjust.
+But that would be because once Z adjusted, it shuts off route via A.
+
+6M3b.
+```{r ex6M3b}
+
+ library(dagitty)
+dag_6m3b<- dagitty( "dag {
+
+    X -> Y
+    Z <- X
+    Z -> Y
+    A -> Z
+  A -> Y
+}")
+coordinates( dag_6m3b) <- list( x=c(X=0,Z=1,A=2,Y=2) ,
+                                  y=c(X=1,Y=1,Z=0,A=0) )
+drawdag( dag_6m3b)
+adjustmentSets( dag_6m3b , exposure="X" , outcome="Y" )
+
+```
+
+6M3c.
+```{r ex6M3c}
+
+ library(dagitty)
+dag_6m3c<- dagitty( "dag {
+
+    X -> Y
+    Z <- X
+    Z <- Y
+    A -> Z
+  A -> X
+}")
+coordinates( dag_6m3c) <- list( x=c(X=0,Z=1,A=0,Y=2) ,
+                                  y=c(X=1,Y=1,Z=0,A=0) )
+drawdag( dag_6m3c)
+adjustmentSets( dag_6m3c , exposure="X" , outcome="Y" )
+
+```
+
+No adjustment sets.
+
+6M3d.
+```{r ex6M3d}
+
+ library(dagitty)
+dag_6m3d<- dagitty( "dag {
+
+    X -> Y
+    Z <- X
+    Z -> Y
+    A -> Z
+  A -> X
+}")
+coordinates( dag_6m3d) <- list( x=c(X=0,Z=1,A=0,Y=2) ,
+                                  y=c(X=1,Y=1,Z=0,A=0) )
+drawdag( dag_6m3d)
+adjustmentSets( dag_6m3d , exposure="X" , outcome="Y" )
+
+```
