@@ -1,0 +1,197 @@
+---
+title: "Chapter 7"
+output: html_notebook
+---
+
+```{r packages}
+require(rethinking)
+```
+Overfitting. Uses example of brain size/body size in primates to show how if you keep adding polynomials you get better and better fit - but in the end you are just reproducing the data.  
+
+"While more complex models fit the data better, they often predict new data
+worse."
+
+Here is the primate data.
+Note difference in transformation for mass and brain here. mass is a z-score, but brain is just  a proportion of the largest brain size - logic is that this is what we will be predicting, and if we use this transform we will be able to check if value is sensible, in that you can't have a negative brain size.  
+
+```{r code7.1-2}
+sppnames <- c( "afarensis","africanus","habilis","boisei", 
+"rudolfensis","ergaster","sapiens")
+brainvolcc <- c( 438 , 452 , 612, 521, 752, 871, 1350 )
+masskg <- c( 37.0 , 35.5 , 34.5 , 41.5 , 55.5 , 61.0 , 53.5 )
+d <- data.frame( species=sppnames , brain=brainvolcc , mass=masskg )
+
+d$mass_std <- (d$mass - mean(d$mass))/sd(d$mass)
+d$brain_std <- d$brain / max(d$brain)
+
+```
+
+Now we'll look at the linear model. 
+Attend to the priors here: The prior for a is just centered on the mean
+brain volume (rescaled) in the data. So it says that the average species with an average body mass has an average brain volume - but the 89% credible interval goes from about -1 to 2 (ie mean of .5, +/- 1.5*SD). So that gives prior from twice as big as human brain to a negative value - not realistic.
+The prior for b is very flat and centered on zero. It allows for absurdly large positive and negative relationships. 
+
+```{r code7.3}
+#before the quap code, just plot out the density functions for priors to show the problems with priors noted above.
+dens(rnorm(500,.5,1),main='prior for a',xlab='mean brain as proportion of human brain')
+dens(rnorm(500,0,19),main='prior for b',xlab='prior slope: increase in brain for each unit increase in mass_std')
+m7.1 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b*mass_std,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d )
+```
+
+Notes that you can use lm to get posterior distribution for brain size models. (This is what I have wondered about all along!). But you don't get a posterior for sigma.
+
+```{r olsversion}
+m7.1_OLS <- lm( brain_std ~ mass_std , data=d )
+post <- extract.samples( m7.1_OLS )
+dens(post$Intercept)
+dens(post$mass_std)
+
+#This makes me wonder about comparing the posterior with m7.1
+posta <- extract.samples( m7.1 )
+dens(posta$a)
+dens(post$Intercept,add=T,col='red')
+dens(posta$b)
+dens(post$mass_std,add=T,col='red')
+```
+
+Hmm - the values are virtually identical. I also tried going back to alter priors for model 7.1 to make them much more tightly constrained and it made no difference at all!  I guess this relates to what we've been told - priors don't have much effect for simple models but we need to understand them as they can be important for complex models.
+
+Computing R^2. Use sim to compute the posterior predictive distribution
+for each observation and subtract each observation from its prediction to get a residual. Then we need the variance of both these residuals and the outcome variable. 
+NB this is not the variance R returns with var function "which is a frequentist estimator and therefore has the wrong denominator." (argh!) 
+var2 from rethinking computes the old fashioned way: the average squared deviation from the mean. 
+
+```{r code7.5}
+set.seed(12) 
+s <- sim( m7.1 )
+dim(s) #this is 1000 x 7, ie 1000 estimates for each of 7 observations
+head(s) #just to remind me what this looks like
+
+r <- apply(s,2,mean) - d$brain_std #subtract actual observed from predicted
+#nb r here stands for residual, rather than correlation coeff....
+resid_var <- var2(r)
+wrong_var <- var(r) #I added this so I could see just how wrong it is!
+outcome_var <- var2( d$brain_std ) #actual variance in brain_std
+R2 <- 1 - resid_var/outcome_var
+wrongR2 <- 1-wrong_var/outcome_var
+
+paste('R2 is ',R2)
+paste('wrongR2 is ',wrongR2)
+
+```
+
+                  
+This does show a big difference for R2 and wrongR2 - my guess is this might have to do with using a demonimator of N-1 rather than N, and so only make a big difference with a very small sample such as this one.
+
+In fact, the estimates of R2 from lm give a multiple_R-squared that is close (but not identical) to R2 from McElreath; but also gives version adjusted for shrinkage that is smaller.
+
+```{r exploreR2diffs}
+paste('R2 from var2 version is ',R2)
+paste('wrongR2 from using var is ',wrongR2)
+summary(m7.1_OLS)
+```
+
+Now make a function for R2, which McElreath doesn't like, so he calls it R2_is_bad
+
+```{r code7.6}
+R2_is_bad <- function( quap_fit ) { 
+s <- sim( quap_fit , refresh=0 )
+r <- apply(s,2,mean) - d$brain_std
+1 - var2(r)/var2(d$brain_std)
+}
+```
+
+He does rather labour the point re polynomials, so I am just going to do a couple of them here.
+
+```{r models4_5}
+m7.4 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2 +
+b[3]*mass_std^3 + b[4]*mass_std^4,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d , start=list(b=rep(0,4)) )
+m7.5 <- quap(
+alist(
+brain_std ~ dnorm( mu , exp(log_sigma) ),
+mu <- a + b[1]*mass_std + b[2]*mass_std^2 +
+b[3]*mass_std^3 + b[4]*mass_std^4 +
+b[5]*mass_std^5,
+a ~ dnorm( 0.5 , 1 ),
+b ~ dnorm( 0 , 10 ),
+log_sigma ~ dnorm( 0 , 1 )
+), data=d , start=list(b=rep(0,5)) )
+```
+
+now plot models -I made a clumsy loop to do the 2 models in one chunk of code
+
+```{r modified7.10}
+for (i in 1:2){
+post <- extract.samples(m7.4) 
+if (i==2) {post <- extract.samples(m7.5) }
+mass_seq <- seq( from=min(d$mass_std) , to=max(d$mass_std) , length.out=100 )
+l <- link( m7.4 , data=list( mass_std=mass_seq ) )
+if(i==2) {l <- link( m7.5 , data=list( mass_std=mass_seq ) )}
+mu <- apply( l , 2 , mean )
+ci <- apply( l , 2 , PI )
+plot( brain_std ~ mass_std , data=d ,ylim=c(-.5,1.5))
+lines( mass_seq , mu )
+shade( ci , mass_seq )
+}
+
+```
+General idea of overfitting - with more terms you can get better and better fit, but it gets ridiculous as you aren't predicting anything - just redescribing the data. 
+
+### Minimum description length
+When a model has a parameter to correspond to each datum, there is no compression. The model just encodes the raw data in a different form, using parameters instead.
+As a result, we learn nothing about the data from such a model. Learning about the data requires using a simpler model that achieves some compression, but not too much. This view of model selection is often known as Minimum Description Length (MDL)
+
+### Drop one approach to assess sensitivity to data
+Underfitting is opposite problem - too few parameters, so poor description of data AND poor prediction.
+
+Can think of underfit model as insensitive to sample  : could remove data points with no effect.   
+
+Shows how models behaving if you repeatedly drop one row - makes the point that the overfitted model changes radically, whereas underfit model remains poor but doesn't change so much.  
+
+## 7.2 Entropy and accuracy
+
+"This material is complicated. You don’t have to understand everything at first."
+Right...
+
+Accuracy depends upon the definition of the target, and there is no universally best target. 2 dimensions
+(1) Cost-benefit analysis. 
+(2) Accuracy in context. 
+
+Illustrates with e.g. of weather prediction. If binary prediction of rain/no rain, may be more accurate if always predicting no rain in place where sunshine is more common.But if there is greater cost to missing rain when it actually occurs,need more nuanced prediction.  
+
+Also notes that if we just take hit rate, then consistent prediction of no rain is best, but if we assess accuracy at predicting sequence of weather over days, this does terribly.  
+
+We need the likelihood - ie joint probability of correct over days.  
+So we use log probability of data to assess accuracy.  
+
+How to measure distance from perfect prediction? Information theory approach: how much is uncertainty reduced by learning an outcome.  
+*Information*: The reduction in uncertainty when we learn an outcome.  
+
+The *uncertainty* contained in a probability distribution is the average log-probability of an event.  
+Increases as number of possible events increases. 
+Is additive: What this means is that if we first measure the uncertainty about rain or shine (2 possible events) and then the uncertainty about hot or cold (2 different possible events), the uncertainty over the four combinations of these events—rain/hot, rain/cold, shine/hot, shine/cold— is the sum of the separate uncertainties.  
+
+
+
+
+
+
+
+
+
+
+
