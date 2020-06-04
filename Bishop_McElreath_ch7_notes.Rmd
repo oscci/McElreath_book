@@ -185,13 +185,259 @@ The *uncertainty* contained in a probability distribution is the average log-pro
 Increases as number of possible events increases. 
 Is additive: What this means is that if we first measure the uncertainty about rain or shine (2 possible events) and then the uncertainty about hot or cold (2 different possible events), the uncertainty over the four combinations of these events—rain/hot, rain/cold, shine/hot, shine/cold— is the sum of the separate uncertainties.  
 
+Uncertainty will be less in Abu Dhabi, where it rains v seldom, than in England, where it is much less certain when it rains.
+
+```{r code7.12}
+p1 <- c( 0.3 , 0.7 ) #probability of rain and shine
+#NB entropy applies to a probability DISTRIBUTION so p is a vector
+uncertainty1 <- -sum( p1*log(p1) )
+uncertainty1
+p2<- c( 0.01 , 0.99) #probability of rain and shine
+uncertainty2 <- -sum( p2*log(p2) )
+uncertainty2
+```
+
+Information entropy measures the uncertainty inherent in a *distribution
+of events*.  
+
+### Maximum entropy
+Also known as maxent: family of techniques for finding probability distributions that are most consistent with states of knowledge. In other words, given what we know, what is the least surprising distribution?
+One answer to this question maximizes the information entropy, using the prior knowledge as constraint. If you do this, you actually end up with the posterior distribution. So Bayesian updating is entropy maximization
+
+Kullback-Leibler (K-L) divergence: The additional uncertainty induced by using probabilities from one distribution to describe another distribution.
+
+Divergence is the average difference in log probability between the
+target (p) and model (q) ie difference in entropies.
+
+```{r divergenceplot}
+#my attempt at fig 7.5
+#THIS IS WRONG - see below
+p1 <- .3 #probability of rain 
+px <-c(p1,1-p1)
+uncertainty1 <- -sum( px*log(px) )
+KL <- vector()
+qseq <-seq(from=.01,to=.99,by= .01)
+for (q in qseq){
+  pz<-c(q,1-q)
+  uncertainty2 <- -sum( pz*log(pz) )
+  KL <- c(KL,uncertainty1 -uncertainty2)
+}
+plot(qseq,KL)
+
+#This is clearly wrong! Should not be symmetric, should not go below zero and should reach minimum at .3
+```
+
+Formula from lecture
+
+$$ D_K(p,q) = \sum_i p_i(log(p_i)-log(q_i)) $$
 
 
+#2nd attempt does work...
+#based on formula on p 211.
+```{r divergence2}
+p1 <- .3 #probability of rain 
+p <-c(p1,1-p1)
+qseq <-seq(from=.01,to=.99,by= .01)
+KL2<-vector()
+for (q in qseq){
+  KL2<-c(KL2,p1*log(p1/q)+(1-p1)*log((1-p1)/(1-q)))
+}
+plot(qseq,KL2)
 
 
+```
 
 
+Fun thing: I was listening to lecture without watching and thought this was the Kale Divergence.  
+ 
+Since predictive models specify probabilities of events (observations),
+we can use divergence to compare the accuracy of models.  
+
+Divergence is directional: you assume p is estimate of truth, and see how far estimates are out if you use q. 
+
+In practice we don't know the truth, but we can compare models. 
+We can estimate how far apart q and r are, and which is closer to the target.
+
+The rethinking package has a function called lppd—log-pointwisepredictive-
+density—to do this calculation for quap models
+
+```{r code7.13}
+set.seed(1)
+lppd( m7.1 , n=1e4 )
+````
+
+Each of these values is the log-probability score for a specific observation. We have 7 observations.
+If you sum these values, you’ll have the total logprobability score for the model and data. What do these values mean? Larger values are better, because that indicates larger average accuracy. It also quite common to see something called the deviance, which is like a lppd score, but multiplied by -2 so that smaller values are better.  
+
+But always get better fit with more parameters. So need to have a test sample as well as a training sample.  
+(1) Suppose there’s a training sample of size N.
+(2) Compute the posterior distribution of a model for the training sample, and compute the score on the training sample. Call this score Dtrain.
+(3) Suppose another sample of size N from the same process. This is the test sample.
+(4) Compute the score on the test sample, using the posterior trained on the training sample. Call this new score Dtest.
+
+Root of overfitting is a model’s tendency to get overexcited by the training sample.
+When the priors are flat or nearly flat, the machine interprets this to mean that every parameter value is equally plausible. As a result, the model returns a posterior that encodes as much of the training sample — as represented by the likelihood function — as possible.  
+
+Can prevent this with a prior that slows the rate of learning from the sample.  
+The most common skeptical prior is a regularizing prior. Such a prior, when tuned properly, reduces overfitting while still allowing the model to learn the regular features of a sample.  
+
+Consider Gaussian model
+
+$$y_i \sim Normal (\mu, \sigma)$$
+$$\mu_i = \alpha + \beta  x_i$$
+$$\alpha \sim Normal (0,  100)$$
+$$\beta \sim Normal (0,  1)$$
+
+$$\sigma \sim Exponential (1)$$
+
+Assume x is standardized as z-score. Alpha give flat prior.
+
+```{r checkdists}
+alpha <- rnorm(500,0,100)
+dens(alpha, xlim=c(-2,2))
+#NB if you plot entire range of alpha, then normal, but in practice would not expect values of x outside range -2 to 2, and here it is pretty flat.
+
+```
+Beta has SD of 1 and so has more restricted range. Can make even more restricted with smaller SD.  
+
+Gives example of small sample size. Training deviance always increases—gets worse—with tighter priors. Skeptical prior prevents the model from adapting completely to the sample. But the test deviances, out-of-sample, improve (get smaller) with the tighter priors. 
+
+Also, as the prior gets more skeptical, the harm done by an overly complex
+model is greatly reduced.  
+
+Regularizing priors are great, because they reduce overfitting. But if they are too skeptical, they prevent the model from learning from the data.  
+
+Multilevel models (later chapter) show adaptive regularization, where the model itself tries to learn how skeptical it should be.  
+
+Linear models in which the slope parameters use Gaussian priors,
+centered at zero, are sometimes known as ridge regression. Ridge regression typically takes as input a precision that essentially describes the narrowness of the prior. 
+
+Can navigate overfitting and underfitting by evaluating model out-of-sample. 2 strategies: cross-validation and information criteria.
+
+Cross-validation, leave out small chunk of observations and evaluate  model on the observations that were left out.  
+
+Could divide our sample in half, train on the first half, and then score the model on the second. At the other extreme, you could make each point observation a fold and fit as many models as you have individual observations, scoring each model on only the single observation that was omitted. You can perform cross-validation on quap models using the
+cv_quap function in the rethinking package.
+
+Common to use the maximum number of folds, resulting in leaving out one unique observation in each fold. This is called leave-one-out cross-validation (often abbreviated as LOOCV): default in cv_quap.
+
+Main problem: if 1000 observations, need to run model 1000 times - v computer-intensive. But can identify influential datapoints and focus on them.  
+
+This can be done with Pareto-smoothed importance sampling cross-validation (PSIS).
+
+Alternative approach: information criteria to compute an expected score out of sample. This uses a pattern  in the distance: the difference is approximately twice the number of parameters in each model. For ordinary linear regressions with flat priors, the expected overfitting penalty is about twice the number of parameters.  
+
+This is the phenomenon behind information criteria. The best known information criterion is the Akaike information criterion, abbreviated AIC. AIC provides a surprisingly simple estimate of the average out-of-sample deviance:  
+AIC = Dtrain + 2p = This is the phenomenon behind information criteria. The best known information
+criterion is the Akaike information criterion, abbreviated AIC.112 AIC provides a surprisingly simple estimate of the average out-of-sample deviance.
+Works well if:  
+(1) The priors are flat or overwhelmed by the likelihood.  
+(2) The posterior distribution is approximately multivariate Gaussian.  
+(3) The sample size N is much greater than the number of parameters k.  
+
+Deviance Information Criterion (DIC): similar but can accommodate more specific priors.  
+
+Widely Applicable Information Criterion (WAIC) makes no assumption about the
+shape of the posterior. It provides an approximation of the out-of-sample deviance that converges to the leave-one-out cross-validation approximation in a large sample.
+
+WAIC is just the log-posterior-predictivedensity (lppd, page 214) plus a penalty proportional to the variance
+
+The function WAIC in the rethinking package will compute WAIC for a model fit with quap or ulam or rstan 
+
+Like PSIS, WAIC is pointwise. Prediction is considered case-by-case, or point-by-point, in the data. This is useful, because some observations are much harder to predict than others and may also have different uncertainty.  
+
+ALso explains BIC though says it is not Bayesian....
+
+## Comparing CV, PSIS, and WAIC.
+
+PSIS and WAIC perform very similarly in the context of ordinary linear models. Can differ when the posterior distribution is not approximately Gaussian or in the presence of observations that strongly influence
+the posterior.
+
+Overview:
+Approaches to model comparison. Following the fit to the sample is no good, because fit will always favor more complex models. Information divergence is the right measure of model accuracy, but even it will just lead us to choose more and more complex and wrong models.
+We need to somehow evaluate models out-of-sample.  A meta-model of
+forecasting tells us two important things. 
+1. First, flat priors produce bad predictions. Regularizing
+priors—priors which are skeptical of extreme parameter values—reduce fit to sample but tend to improve predictive accuracy. 
+2. We can get a useful guess of predictive accuracy
+with the criteria CV, PSIS, and WAIC. Regularizing priors and CV/PSIS/WAIC are complementary. Regularization reduces overfitting, and predictive criteria measure overfitting.
+
+Common use of cross-validation and information criteria is to perform model selection, which means choosing the model with the lowest criterion value and then discarding the others. But you should never do this. This kind of selection procedure discards the information about relative model accuracy contained in the differences among the CV/PSIS/WAIC values
+
+So instead of model selection, we’ll focus on model comparison.
+
+Uses models from chapter 6, so we will run these first.  
 
 
+```{r simdatafor6}
+set.seed(71) 
+# number of plants
+N <- 100
+# simulate initial heights
+h0 <- rnorm(N,10,2)
+# assign treatments and simulate fungus and growth
+treatment <- rep( 0:1 , each=N/2 )
+fungus <- rbinom( N , size=1 , prob=0.5 - treatment*0.4 )
+h1 <- h0 + rnorm(N, 5 - 3*fungus)
+# compose a clean data frame
+d <- data.frame( h0=h0 , h1=h1 , treatment=treatment , fungus=fungus )
+precis(d)
+```
 
+```{r m6.6}
+m6.6 <- quap(
+alist(
+h1 ~ dnorm( mu , sigma ),
+mu <- h0*p,
+p ~ dlnorm( 0 , 0.25 ),
+sigma ~ dexp( 1 )
+), data=d )
+precis(m6.6)
+```
+
+```{r m6.7}
+m6.7 <- quap( 
+alist(
+h1 ~ dnorm( mu , sigma ),
+mu <- h0 * p,
+p <- a + bt*treatment + bf*fungus,
+a ~ dlnorm( 0 , 0.2 ) ,
+bt ~ dnorm( 0 , 0.5 ),
+bf ~ dnorm( 0 , 0.5 ),
+sigma ~ dexp( 1 )
+), data=d )
+precis(m6.7)
+```
+
+```{r m6.8}
+m6.8 <- quap(
+alist(
+h1 ~ dnorm( mu , sigma ),
+mu <- h0 * p,
+p <- a + bt*treatment,
+a ~ dlnorm( 0 , 0.2 ),
+bt ~ dnorm( 0 , 0.5 ),
+sigma ~ dexp( 1 )
+), data=d )
+precis(m6.8)
+```
+
+
+```{r code7.25_26}
+set.seed(11) 
+WAIC( m6.7 )
+WAIC(m6.6)
+set.seed(77) 
+compare( m6.6 , m6.7 , m6.8 )
+```
+
+```{r 7.27}
+
+set.seed(91)
+waic_m6.7 <- WAIC( m6.7 , pointwise=TRUE )
+waic_m6.8 <- WAIC( m6.8 , pointwise=TRUE )
+n <- length(waic_m6.6)
+diff_m6.7_m6.8 <- waic_m6.7 - waic_m6.8
+plot( compare( m6.6 , m6.7 , m6.8 ) )
+```
 
