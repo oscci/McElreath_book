@@ -1,0 +1,247 @@
+---
+title: "Chapter 8: conditional manatees"
+output: html_notebook
+---
+
+This covers familiar territory about how selection bias/survivor bias can induce misleading associations. Manatees have scars from injury by propellors, but not from the keel. This is because collision with the keel kills them. To protect manatees, need to prevent those, rather than have propellor guards.
+Similar to the WW2 gunshots on planes analysis: the ones that return with holes in them have survived. Those with holes elsewhere don't return. 
+Described in terms of conditioning: qu of how something gets into the sample.  
+
+Novel bit to me is to link this with interactions: another instance of conditioning: the impact of X on Y depends on Z.
+Interaction also known as moderation.
+Multilevel models are massive interaction nmodles, oin which estimates (intercepts and slopes) are conditional on clusters (person, genus, etc) in data.
+And we go beyond just estimating how a predictor changes depending on another variable: also estimating distribution of those changes.
+
+Moves on to example of how ruggedness of terrain relates to GDP: varies with continent.
+GDP increases with ruggedness in Africa, decreases with ruggedness elsewhere.
+In DAG terms, both R (ruggedness) and C (continent) influence GDP
+They could be independent, but could also interact.
+NB DAGs do not show interactions. 
+
+To analyse, could split data by continent. But problems.  
+1. will get separate estimates for all parameters, even those that don't vary  
+2. want to estimate probability of how continent affects things, so need both continents in model to estimate that.  
+3. May want to use information criteria to compare models - need continents together to do this  
+4. overfitting risk may be higher in some categories, if N varies for instance. (Talks about 'borrowing' information across categories: I don't understand this - 'what we learn about ruggedness outside of Africa should have some effect on our estimate within Africa (???))  
+
+```{r code8.1}
+require(rethinking)
+data(rugged)
+d <- rugged
+
+#make log version of outcome
+d$log_gdp<- log(d$rgdppc_2000)
+
+#extract countries with gdp data
+dd <- d[complete.cases(d$rgdppc_2000),]
+
+#rescale variables
+dd$log_gdp_std <- dd$log_gdp/mean(dd$log_gdp) #uses mean to scale; values are proportion of mean value
+dd$rugged_std <- dd$rugged/max(dd$rugged) #uses max to scale because neg values not meaningful
+
+```
+
+Model is 
+
+$$log(y_i) \sim Normal(\mu_i,\sigma)$$
+$$\mu_i = \alpha + \beta(r_i - \bar r)$$
+
+r bar is average ruggedness. Using this makes it easier to assign a prior to the intercept - we know it will average at the mean - in the scaled data, this is 1.  
+
+beta can be centred on zero, ie no bias for positive or negative. 
+
+Code 8.2 runs model with both alpha and beta having SD estimates of 1. Even I can see that is far too big for alpha (will give impossible values), and it also seems high for beta. 
+
+M works through this example. This is nice for consolidating what we did before, in terms of ensuring priors give reasonable ranges, but I will skip for now - though for me it would be a good exercise to see if I could work through this and generate the script without reading the examples!  
+
+He specifies more plausible priors and then does a precis (to get the posterior), and that shows that there is no overall association between R and G.  Remember, this is a model that just averages across all continents.  
+
+Note: adding an indicator variable for continent is not going to reveal the difference in slopes.  
+Need a model in which there is a different intercept specified for the two continents.  
+
+$$\mu_i = \alpha_C[i] + \beta(r_i - \bar r) $$
+(I haven't quite got to grips with latex subscripts here...)  
+
+C is an index variable: 1 for Africa and 2 for not.
+
+Benefit of doing it this way instead of with indicator variable: we don't need to assume mean for Africa is inherently less certain than mean for other continents (I assume because N countries lower).  
+
+Model in quap
+
+```{r code8.8}
+
+dd$cid <- ifelse(dd$cont_africa==1,1,2)
+
+m8.1 <- quap(
+  alist(
+    log_gdp_std ~ dnorm(mu, sigma),
+    mu <- a+b*(rugged_std-.215), #.215 is the mean for rugged_std
+    a ~ dnorm (1, .1),
+    b ~ dnorm (0,.3),
+    sigma ~ dexp(1)
+  ), data=dd)
+
+#with different intercepts for continent
+m8.2 <- quap(
+  alist(
+    log_gdp_std ~ dnorm(mu, sigma),
+    mu <- a[cid] + b*(rugged_std-.215), #.215 is the mean for rugged_std
+    a[cid] ~ dnorm (1, 0.1),
+    b ~ dnorm (0,0.3),
+    sigma ~ dexp(1)
+  ), data=dd)
+
+#with interaction allowing different slopes for continent
+m8.3 <- quap(
+  alist(
+    log_gdp_std ~ dnorm(mu, sigma),
+    mu <- a[cid] + b[cid]*(rugged_std-.215), #.215 is the mean for rugged_std
+    a[cid] ~ dnorm (1, 0.1),
+    b[cid] ~ dnorm (0,0.3),
+    sigma ~ dexp(1)
+  ), data=dd)
+
+
+precis(m8.3,depth=2)
+compare(m8.1,m8.2,m8.3,func=PSIS)
+
+plot(PSIS(m8.3,pointwise=TRUE)$k)
+```
+Model 8.3 has more than 95% of the weight -strong support for interaction effect. 
+
+
+```{r code8.17}
+#plot Africa
+#I'm going to do both plots in a loop
+rugged_seq <- seq(from=-.1,to=1.1,length.out=30) #from earlier chunk
+
+for (j in 1:2){
+  d.A1 <- dd[dd$cid==j,]
+  plot(d.A1$rugged_std,d.A1$log_gdp_std,pch=16,col=rangi2,
+       xlab="Ruggedness standardized",ylab="log GDP as proportion of mean",
+       xlim=c(0,1))
+  mu <- link(m8.3,data=data.frame(cid=j,rugged_std=rugged_seq))
+  mu_mean <- apply(mu,2,mean)
+  mu_ci <- apply(mu,2,PI,prob=.97)
+  lines(rugged_seq,mu_mean,lwd=2)
+  shade(mu_ci,rugged_seq,col=col.alpha(rangi2,0.3))
+  mtext(paste0('Continent ID = ',j))
+  
+}
+```
+
+
+# Symmetry of interactions
+
+Can ask how much association between ruggedness and log GDP depends on continent.  
+OR how much assocaiton of continent wiht log GDP depends on ruggedness.  
+
+Analysis treats as equivalent.  
+Note that we tend to focus on interpretations that allow manipulation. But we could do a plot of ruggedness vs expected difference in log GDP - in effect plotting impact of 'moving' a country to Africa.
+
+## Continuous interactions
+Notes difficult to interpret. Uses the triptych plot.  
+```{r 8.19}
+data(tulips)
+d <- tulips
+d$blooms_std<- d$blooms/max(d$blooms)
+d$water_cent<- d$water/mean(d$water)
+d$shade_cent<- d$shade/mean(d$shade)
+
+```
+
+
+V useful advice on rescaling: create focal points that you have prior information about.
+See pp 254-255 for discussion of this.  
+
+M also explains why we multiply terms for interaction: in effect we define the first b in terms of a further linear model - but this reduces to adding a mulitiplicative term.
+
+```{r code8.23}
+#Start with model with no interaction
+m8.4 <- quap(
+  alist(
+    blooms_std ~ dnorm(mu, sigma),
+    mu <- a + bw*water_cent+bs*shade_cent,
+    a ~ dnorm(.5,.25),
+    bw ~ dnorm(0,.25),
+    bs ~ dnorm(0,.25),
+    sigma~dexp(1)
+  ), data=d)
+
+
+#Start with model with no interaction
+m8.5 <- quap(
+  alist(
+    blooms_std ~ dnorm(mu, sigma),
+    mu <- a + bw*water_cent+bs*shade_cent + bsw*water_cent*shade_cent,
+    a ~ dnorm(.5,.25),
+    bw ~ dnorm(0,.25),
+    bs ~ dnorm(0,.25),
+    bsw ~ dnorm(0,.25),
+    sigma~dexp(1)
+  ), data=d)
+```
+
+And now plot the outcomes
+
+There is something wrong here! 
+The code assumes values from -1 to 1 for shade and water centered.
+But they actually range .5 , 1, 1.5
+
+I will recode! But that means redoing the models....
+
+```{r code8.25}
+d$nushade <- d$shade-2
+d$nuwater <-d$water-2
+#Start with model with no interaction
+m8.4a <- quap(
+  alist(
+    blooms_std ~ dnorm(mu, sigma),
+    mu <- a + bw*nuwater+bs*nushade ,
+    a ~ dnorm(.5,.25),
+    bw ~ dnorm(0,.25),
+    bs ~ dnorm(0,.25),
+    bsw ~ dnorm(0,.25),
+    sigma~dexp(1)
+  ), data=d)
+
+#now with interaction
+m8.5a <- quap(
+  alist(
+    blooms_std ~ dnorm(mu, sigma),
+    mu <- a + bw*nuwater+bs*nushade + bsw*nuwater*nushade,
+    a ~ dnorm(.5,.25),
+    bw ~ dnorm(0,.25),
+    bs ~ dnorm(0,.25),
+    bsw ~ dnorm(0,.25),
+    sigma~dexp(1)
+  ), data=d)
+
+prior <-extract.prior(m8.5a)
+par(mfrow=c(1,3)) #3 plots in a row
+#I will loop through the 2 models
+for (j in 1:3){
+  for (s in -1:1){ 
+    idx<-which(d$nushade==s)
+    plot(d$nuwater[idx],d$blooms_std[idx],xlim=c(-1,1),ylim=c(0,1),
+         xlab='water',ylab='blooms',pch=16,col=rangi2)
+    mu <- link(m8.4a,data=data.frame(nushade=s,nuwater=-1:1))
+    if(j==2){
+      mu <- link(m8.5a,data=data.frame(nushade=s,nuwater=-1:1))
+    }
+    if(j==3){
+        mu <- link(m8.5a,post=prior,data=data.frame(nushade=s,nuwater=-1:1))
+    }
+   
+    for (i in 1:20){
+      lines(-1:1,mu[i,],col=col.alpha("black",0.3))
+    }
+  }
+}
+
+```
+
+p 260 - I added the prior plots as an extra run through the loop, rather than doing a new chunk
+
+
+
