@@ -64,7 +64,9 @@ $$\mu_i = \alpha_C[i] + \beta(r_i - \bar r) $$
 
 C is an index variable: 1 for Africa and 2 for not.
 
-Benefit of doing it this way instead of with indicator variable: we don't need to assume mean for Africa is inherently less certain than mean for other continents (I assume because N countries lower).  
+Benefit of doing it this way instead of with indicator variable: we don't need to assume mean for Africa is inherently less certain than mean for other continents. 
+This logic confused our reading group, but it is explained in section 5.3.1 - it's to do with 0/1 coding predicting more variability in the group coded 1 because of additional parameter.
+
 
 Model in quap
 
@@ -145,6 +147,9 @@ Notes difficult to interpret. Uses the triptych plot.
 data(tulips)
 d <- tulips
 d$blooms_std<- d$blooms/max(d$blooms)
+## I did the next 2 steps wrong!
+## Instead of subtracting mean, I divided by mean!
+## This created lots of downstream problems with the script, which I only fixed by recomputing the converted water/shade by in effect subtracting mean!
 d$water_cent<- d$water/mean(d$water)
 d$shade_cent<- d$shade/mean(d$shade)
 
@@ -242,6 +247,5 @@ for (j in 1:3){
 ```
 
 p 260 - I added the prior plots as an extra run through the loop, rather than doing a new chunk
-
 
 
