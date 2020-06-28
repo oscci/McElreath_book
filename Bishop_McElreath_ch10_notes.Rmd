@@ -1,0 +1,135 @@
+---
+title: "McElreath Chapter 10"
+output: html_notebook
+---
+
+```{r loadpackages}
+require(rethinking)
+
+```
+
+Need to choose distributions for parameters (priors) and a likelihood function (distribution of data).  
+Conventional choices are wide Gaussian priors; Gaussian likelihood in linear regression.
+Work well in most situations.
+
+For unconventional models, entropy provides a principle to guide choice of probability distributions - distribution with biggest entropy is best for 3 reasons.
+1. big entropy - gives wide and uninformative distribution - so probability is spread as evenly as possible. Pick least informative distribution consistent with partial scientific knowledge about the parameters. 
+For likelihoods, big entropy means counting all the ways outcomes could arise, consistent with constraints on outcome variable.  
+So I guess he's saying here that we are avoiding bias, except bias from prior knowledge.  
+
+2. High entropy distributions consistent with nature.  Gaussian common in nature: results from addition of underlying processes. We need not know about underlying processes; we just know location and variance. Need to be aware of other procsses - natural processes other than addition.  
+3. pragmatic - it tends to work. 
+
+### Generalised linear models
+Like linear regression but need not use Gaussian likelihoods.  
+
+Can think of Bayesian updating as entropy maximization.  
+Posterior distribution has greatest entropy relative to prior (ie smallest cross-entropy).  
+Produces least informative distribution that is still consistent with our assumptions - ie smallest divergence from prior that is possible while remaining consistent with constraints and data.  
+
+Most conservative distribution that obeys its constraints.
+
+## Maximum entropy 
+Measure of uncertainty that satisfies 3 criteria.
+1. continuous
+2. increases with N possible events
+3. additive
+
+Uncertainty of a probability distribution p, wit probabilities $$p_i$$ for each possible event i is average log probability.  
+
+Illustrates ith 5 buckets and 10 numbered pebbles. Each pebble equally likely to land in each bucket - may get all 10 in one bucket, or 2 in each bucket etc.
+Some arrangements more likely. There is only one way to arrange all pebbles so they are all in bucket 3, but there are 113400 ways to have 2 pebbles in each bucket.
+
+```{r code10.1-2}
+p <- list()
+p$A <- c(0,0,10,0,0)
+p$B <- c(0,1,8,1,0)
+p$C <- c(0,2,6,2,0)
+p$D <- c(1,2,4,2,1)
+p$E <- c(2,2,2,2,2)
+#so p is just a list of frequencies for each combination
+
+#Now divide each value of each column by its sum
+p_norm <- lapply(p,function(q) q/sum(q)) #p_norm is probability of each outcome in a combination
+p_norm
+```
+For entropy we compute 
+$$H(p) = -\Sigma p_i log p_i$$
+Where probability is zero, just drop it (l'Hopital rule, p 207).  
+
+```{r code 10.3}
+(H <- sapply(p_norm,function(q) -sum(ifelse(q==0,0,q*log(q)))))
+
+```
+
+Shows that distribution E has greatest entropy. A has least.
+
+Shows also that entropy scales with log(N unique arrangements). 
+Heh! I worked out how to compute unique arrangements.
+
+```{r uniques}
+#Note k is selections from n options; next term in formula has n set to remaining choices, ie n-k from previous term
+Bunique <- choose(n=10,k=8)*choose(n=2,k=1)
+Cunique <- choose(n=10,k=6)*choose(n=4,k=2)*choose(n=4,k=2)
+Dunique <- choose(n=10,k=4)*choose(n=6,k=2)*choose(n=4,k=2)*choose(n=2,k=1)
+Eunique <- choose(n=10,k=2)*choose(n=8,k=2)*choose(n=6,k=2)*choose(n=4,k=2)
+
+uniqueseq <- c(1,Bunique,Cunique, Dunique,Eunique)
+plot(log(uniqueseq),H,ylab='entropy (H)')
+```
+"Information entropy is a way of counting how many unique arrangements correspond to a distribution"  (p 303)
+
+Me: I find this useful for explaining p-hacking too! 
+i.e. need to think of how many ways could you get a particular result.
+
+"The distribution that can happen the greatest number of ways is the most plausible distribution." - here I found myself querying! What if the truth corresponded to some very specific set of causal factors leading to a result?
+I guess the answer is that if you got a result that could be caused in many different ways, how would you know that the specific set was correct?
+And that maybe is a reason for specifying priors - if you have in advance a good theoretical reason for a specific set of causes, you build that into your model and then constrain it that way.  
+
+### Gaussian and generalised normal distribution. 
+p 305 - seems these are not the same thing!!
+Generalised normals are continuous with variance of 1. But can be different in terms of peaks and tails. Definition includes alpha and beta.
+
+I have found gnorm package for plotting generalised normal.  
+I just played around with alpha and beta. Gets infinite values if alpha or beta set to zero. Looks normal when both are 2.
+p 305 - says entropy maximised when curvature matches Gaussian and shape = 2, but I'm not sure how shape is defined.  
+https://rdrr.io/cran/gnorm/man/gnorm.html is helpful.  
+Alpha is scale parameter, and beta is shape parameter.
+(All this is explained on the next page.....)
+
+In chunk below I succeed with basic idea, except my entropy seems to be inverted....
+
+```{r do.gnorm}
+require(gnorm)
+myseq=seq(-4,4,.1) #make a sequence of x values to plot
+alist<-sqrt(2)
+blist<-1:4
+keepH <- expand.grid(blist,alist)
+colnames(keepH)<-c('b','a')
+keepH$H <-NA
+keepH$sd <- NA
+thisrow<-0
+
+for (mya in alist){
+for (myb in blist){
+  
+    
+    mydens<-dgnorm(myseq, mu = 0, alpha = mya, beta = myb)
+    Hbits <- mydens*log(mydens) #I found it easier to break up entropy calculation this way! Attempt to do in one step created problems
+    H <- sum(Hbits,na.rm=TRUE)*-1
+
+    thisrow<-thisrow+1
+    keepH$H[thisrow]<-H
+    keepH$sd[thisrow]<-sd(myseq*mydens*length(myseq))
+    keepH$a[thisrow]<-mya
+    keepH$b[thisrow]<-myb
+        plot(myseq,mydens,main=paste0('alpha =',mya,' beta = ', myb,': Entropy = ',round(H,2),', SD = ',round(sd(myseq*mydens*length(myseq)),2)))
+    
+  }
+}
+
+plot(keepH$b[keepH$a==1],keepH$H[keepH$a==1])
+
+```
+
+
