@@ -83,6 +83,7 @@ Me: I find this useful for explaining p-hacking too!
 i.e. need to think of how many ways could you get a particular result.
 
 "The distribution that can happen the greatest number of ways is the most plausible distribution." - here I found myself querying! What if the truth corresponded to some very specific set of causal factors leading to a result?
+
 I guess the answer is that if you got a result that could be caused in many different ways, how would you know that the specific set was correct?
 And that maybe is a reason for specifying priors - if you have in advance a good theoretical reason for a specific set of causes, you build that into your model and then constrain it that way.  
 
@@ -109,7 +110,7 @@ colnames(keepH)<-c('b','a')
 keepH$H <-NA #add column for entropy for this combination
 keepH$sd <- NA #try also to compute SD (I thought differences in this might explain why I was not getting this right)
 thisrow<-0
-
+alist=2
 for (mya in alist){
   for (myb in blist){
     
@@ -164,6 +165,16 @@ This is why link function is needed.
 
 (This is confusing at this point, but 2 pages on it's explained that a logit link function will constrain outcomes between 0 and 1)
 
+## Exponential family of distributions
+My attempt to plot these:
+```{r dists}
+mynormseq <- seq(-3,3,.01)
+plot(dnorm(mynormseq))
+plot(dgamma(mynormseq,2)) #2nd term is shape
+plot(dexp(mynormseq))
+plot(dpois(1:10,4))
+plot(dbinom(10,size=100,prob=seq(.01,.99,.01)))
+```
 
 
 
