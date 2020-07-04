@@ -168,15 +168,83 @@ This is why link function is needed.
 (This is confusing at this point, but 2 pages on it's explained that a logit link function will constrain outcomes between 0 and 1. the alpha + beta (x-xbar) bit is fed in to a logit function.
 
 ## Exponential family of distributions
+
+Exponential constrained to be zero or positive.
+$$ y \sim Exponential(\lambda)$$
+Has one term, lambda, which is a rate.  
+This is core of survival and event history analysis.  
+In lecture, discusses in terms of complex systems which fail when any one component fails (e.g. dishwasher). So likelihood of failure increases over time.
+
+Binomial: if you count events from an exponential distribution.  
+E.g. fruit flies dying: each obeys exponential function, but if we count over many fruit flies, we get binomial.
+Binomial has maximum entropy for binary events.  
+Note it is not flat, but that is because it is constrained by maximum value.  
+
+Poisson distribution: like binomial but many trials and low probability - it is a special case of the binomial.  Used for counts that do not get close to theoretical maximum.  
+
+Gamma distribution: time to the event for an exponential (how long did you wait before dishwasher broke) - suppose you want to know how long before 10 fruitflies died. Many natural phenomena have gamma distribution - e.g. age to cancer - maybe because many cellular defence mechanisms.  
+
+Gamma distribution with v large mean converges to a normal distribution.  
+
+Generative processes link all the different distributions.  
+
+
+
 My attempt to plot these:
 ```{r dists}
 mynormseq <- seq(-3,3,.01)
 plot(dnorm(mynormseq))
+
+plot(dexp(mynormseq[mynormseq>0]),main='Exponential',xlab='time')  #one term, which is a rate
+#restrict lambda to positive values
+
+plot(dbinom(1:20,size=30,prob=.3)) #probability of observing 1:20 cases for event where p =.3 in series of 30
+
 plot(dgamma(mynormseq,2)) #2nd term is shape
-plot(dexp(mynormseq))
+
 plot(dpois(1:10,4))
-plot(dbinom(10,size=100,prob=seq(.01,.99,.01)))
+
 ```
+
+## Generalised linear models 
+Have to pick an outcome distribution based on what you know about the data before it is collected, e.g. is it count data, is there a ceiling, etc. 
+Count variables are integers starting at zero.  Constrains to binomial or poisson, or multinomial or geometric.  
+
+For other types of data may glue together link functions.  
+
+Linear model: the units for the mean are the same as the units for the outcome (e.g. height).
+Not true for other GLMs.
+A link function maps linear space of model like alpha + beta (xi- xbar) onto non-linear space of  a parameter.  
+Logit link maps a paramter defined as a probability mass - constrained between zero and one - this is mapped onto a paramter that can take any real value.  
+
+$$y_i \sim Binomial(n,p_i)$$
+$$logit(p_i) = \alpha + \beta x+i$$
+Logit function is log odds
+$$logit(p_i) = log(p_i/(1-p_i))$$
+Odds are probability of an event happening divided by probability it does not happen.
+
+```{r logit}
+alpha=1
+beta=2
+pv <-vector()
+xseq <-seq(-1,1,.2)
+for (x in xseq){
+pi <- exp(alpha+beta*x)/(1+exp(alpha+beta*x))
+pv<-c(pv,pi)
+}
+plot(xseq,pv,type='l')
+
+
+```
+Note how the plot constrains pv to be between 0 and 1.  
+Compressed near boundaries.  
+No longer the case that a unit change in predictor causes constant change in mean of outcome. - will depend how far from zero the log-odds area.  
+Compression.  
+With GLM, no regression coefficient such as beta from GLM produces constant change on outcome scale.  
+
+The Log link maps parameter defined over only positive real values onto linear model. Using a log link implies exponential scaling of outcome with predictor.  
+Parameter is constrained to be positive.  
+Sensitivity analysis can be used to consider how changing assumptions influences inference.  Opposite of p-hacking. You do many analyses but you report them all.  
 
 
 
