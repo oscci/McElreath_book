@@ -98,7 +98,7 @@ https://rdrr.io/cran/gnorm/man/gnorm.html is helpful.
 Alpha is scale parameter, and beta is shape parameter.
 (All this is explained on the next page.....)
 
-In chunk below I succeed with basic idea, except my entropy is  wrong...
+CHunk below initially confused, but thanks to Filip Melinscak it now works.
 
 ```{r do.gnorm}
 require(gnorm)
@@ -110,28 +110,30 @@ colnames(keepH)<-c('b','a')
 keepH$H <-NA #add column for entropy for this combination
 keepH$sd <- NA #try also to compute SD (I thought differences in this might explain why I was not getting this right)
 thisrow<-0
-alist=2
-for (mya in alist){
+#This bit corrected by Filip: loop over sigma, and compute a from sigma.
+sigmalist <- 1  
+for (mysigma in sigmalist){
   for (myb in blist){
-    
+    mya <- mysigma * sqrt(gamma(1/myb)/gamma(3/myb))
+    #https://en.wikipedia.org/wiki/Generalized_normal_distribution
     mydens<-dgnorm(myseq, mu = 0, alpha = mya, beta = myb)
     Hbits <- mydens*log(mydens) #I found it easier to break up entropy calculation this way! Attempt to do in one step created problems. But something is wrong....
     H <- sum(Hbits,na.rm=TRUE)*-1 #entropy
     
     thisrow<-thisrow+1
     keepH$H[thisrow]<-H
-    keepH$sd[thisrow]<-sd(myseq*mydens*length(myseq))
-    plot(myseq,mydens,main=paste0('alpha =',mya,' beta = ', myb,': Entropy = ',round(H,2),', SD = ',round(sd(myseq*mydens*length(myseq)),2)))
+
+    plot(myseq,mydens,main=paste0('alpha =',mya,' beta = ', myb,': Entropy = ',round(H,2)))
     
   }
 }
-#Attempt at plot from fig 10.2, r hand panel. Doesn't peak at 2....
+
+
+#Attempt at plot from fig 10.2, r hand panel. Peaks at 2
 plot(keepH$b[keepH$a==1],keepH$H[keepH$a==1],xlab='shape (b)',ylab='entropy')
 
 ```
 
-Wondered if problem was I do not constrain SD.  
-Will need to dig out the original code for these figures from book, but meanwhile pressing on.  
 
 p 306 - If all we are willing to assume about a collection of measurements if that they have a finite variance, then Gaussian represents most conservative probability distribution.  But may be able to make further assumptions, so need other distributions.
 
@@ -163,7 +165,7 @@ p is a probability mass - must be between zero and 1.
 But linear model alpha + beta (x-xbar) can fall below zero or exceed 1. 
 This is why link function is needed.  
 
-(This is confusing at this point, but 2 pages on it's explained that a logit link function will constrain outcomes between 0 and 1)
+(This is confusing at this point, but 2 pages on it's explained that a logit link function will constrain outcomes between 0 and 1. the alpha + beta (x-xbar) bit is fed in to a logit function.
 
 ## Exponential family of distributions
 My attempt to plot these:
@@ -175,7 +177,6 @@ plot(dexp(mynormseq))
 plot(dpois(1:10,4))
 plot(dbinom(10,size=100,prob=seq(.01,.99,.01)))
 ```
-
 
 
 
