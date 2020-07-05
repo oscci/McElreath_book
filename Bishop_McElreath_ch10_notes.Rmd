@@ -246,5 +246,18 @@ The Log link maps parameter defined over only positive real values onto linear m
 Parameter is constrained to be positive.  
 Sensitivity analysis can be used to consider how changing assumptions influences inference.  Opposite of p-hacking. You do many analyses but you report them all.  
 
+```{r plotlogodds}
+#my attempt to create figure from lecture
+
+p<-seq(0,1,.01)
+logodds<-log(p/(1-p))
+plot(p,logodds,type='l')
+```
+Initially I had p increase in units of .1, and couldn't work out why logodds only went from -2 to 2. The finer the units, the more you see extreme logodds from the v high or low probabilities.
+Logodds of zero is equal point.  
+
+Logodds of 1 is about 3/4 of time; 1/4.
+
+Logodds of 4 is always; logodds of -4 is never.
 
 
