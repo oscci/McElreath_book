@@ -1,0 +1,417 @@
+---
+title: "McElreath ch11"
+output: html_notebook
+---
+
+Starting with material from last 10 mins of lecture 11.
+
+Chimpanzee study.
+expt with 2 IVs - whether another chimp present (partner/none) and whether prosocial option (lever gives to other) is on L or R.
+
+$$L_i \sim Binomial(1,p_i)$$
+$$logit(p_i) = \alpha_A[i] + \beta_T[i]$$
+where A is actor and T is treatment.
+
+Binomial(1,p) is logistic regression
+Same as Bernouilli(p) - ie Bernouilli is binomial with one trial.  
+
+We need to work out how to define alpha and beta  
+$$\alpha_j \sim to.be.determined$$
+$$\beta_k \sim to.be.determined$$
+
+Alpha - to account for differences between chimps (actors) in handedness.  
+Beta - one parameter for each treatment (ie each combination of partner/side)  
+
+Need to do prior predictive simulation to understand how priors affect outcomes.  
+
+```{r chimpdata}
+library(rethinking)
+data(chimpanzees)
+d <- chimpanzees
+#make code for treatment
+d$treatment <- 1 + d$prosoc_left + 2*d$condition
+xtabs( ~ treatment + prosoc_left + condition , d )
+```
+
+```{r code11.4-6}
+m11.1 <- quap( 
+  alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a ,
+    a ~ dnorm( 0 , 10 )
+  ) , data=d )
+
+#sample from prior
+set.seed(1999) 
+prior <- extract.prior( m11.1 , n=1e4 )
+#I've added here a density plot for the prior
+par(mfrow=c(1,2))
+dens(prior$a) #This is just the normal distribution
+
+p <- inv_logit( prior$a )
+dens( p , adj=0.1 ) #creates nonsense probability distribution where thing never happens or always happens - no middle range probability
+```
+
+
+With this prior, most of the mass is out in the tails. Remember log odds of 4 means always and -4 means never - most of the probablity distribution is outside that range.
+
+Better to have a probability distribution as flat as you can get: prior with sigma of 1.5 does the trick
+
+## Lecture 12
+
+4 treatments. Want unique log odds for each one.  
+Interest is in differences between treatments.  This relates to the beta term.
+
+```{r code11.2}
+m11.2 <- quap(
+  alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a + b[treatment] ,
+    a ~ dnorm( 0 , 1.5 ), #this gives a fairly flat probability distribution
+    b[treatment] ~ dnorm( 0 , 10 )
+  ) , data=d )
+
+set.seed(1999)
+prior <- extract.prior( m11.2 , n=1e4 )
+p <- sapply( 1:4 , function(k) inv_logit( prior$a + prior$b[,k] ) )
+
+dens( abs( p[,1] - p[,2] ) , adj=0.1 ) 
+#Plots the absolute prior difference between the first two treatments.
+```
+
+Just like with alpha, a flat prior on the logit scale piles up nearly all of the prior probability on zero and one.  
+This reflects the difference between 2 treatments - biggest has to be zero or 1 (in latter case, with one treatment it always happens and the other it never happens).  
+This means that the model believes, before it sees that data, that the treatments are either completely alike or completely different.  
+
+```{r code11.9}
+m11.3 <- quap( 
+  alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a + b[treatment] ,
+    a ~ dnorm( 0 , 1.5 ),
+    b[treatment] ~ dnorm( 0 , 0.5 )
+  ) , data=d )
+set.seed(1999)
+prior <- extract.prior( m11.3 , n=1e4 )
+p <- sapply( 1:4 , function(k) inv_logit( prior$a + prior$b[,k] ) )
+mean( abs( p[,1] - p[,2] ) )
+dens( abs( p[,1] - p[,2] ) , adj=0.1 ) 
+
+```
+
+Mean absolute difference between conditions is about 10%. Extremely large differences are less plausible. However this is not a strong prior - if difference is larger, it will shine through.  
+
+Now we have our complete model and are ready to add in all the individual chimpanzee parameters.
+We have 7 chimps and 4 treatments.  
+
+
+```{r completechimp11.10}
+# prior trimmed data list 
+dat_list <- list(
+  pulled_left = d$pulled_left,
+  actor = d$actor,
+  treatment = as.integer(d$treatment) )
+# particles in 11-dimensional space
+m11.4 <- ulam(
+  alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a[actor] + b[treatment] ,
+    a[actor] ~ dnorm( 0 , 1.5 ),
+    b[treatment] ~ dnorm( 0 , 0.5 )
+  ) ,
+  data=dat_list , chains=4,log_lik=T )
+precis( m11.4 , depth=2 )
+
+```
+
+The output is on the logit scale.  
+The first 7 parameters are the intercepts unique to each chimpanzee.  
+Each of these expresses the tendency of each individual to pull the left lever.  
+We next plot this
+```{r code11.11}
+post <- extract.samples(m11.4)
+p_left <- inv_logit( post$a )
+plot( precis( as.data.frame(p_left) ) , xlim=c(0,1) )
+
+
+```
+
+
+Each row is a chimpanzee, the numbers corresponding to the values in actor. Four of the
+individuals—numbers 1, 3, 4, and 5—show a preference for the right lever.
+
+Chimp 2 never pulled L lever.  
+
+Why do we bother with this?  These individual effects just add noise. Harder to see the treatment effects if you don't take into account the chimpanzee effects.  
+This is not technically a confound.  But controlling for individual chimp gives you a more precise estimate.  
+
+Next we look at treatment effects. L/N means “prosocial on left /
+no partner.” R/P means ”prosocial on right / partner.” etc  
+Question: do chimpanzees choose the prosocial option more when a partner is present?  
+This implies comparing the first row with the third row and the second row with the fourth row. 
+Plot shows little evidence of prosocial intention in these data. 
+
+```{r code11.12}
+labs <- c("R/N","L/N","R/P","L/P")
+plot( precis( m11.4 , depth=2 , pars="b" ) , labels=labs )
+
+```
+
+
+
+Can calculate the differences between no-partner/partner and make sure.
+
+```{r code11.13}
+diffs <- list( 
+  db13 = post$b[,1] - post$b[,3],
+  db24 = post$b[,2] - post$b[,4] )
+plot( precis(diffs) )
+```
+These are the constrasts between the no-partner/partner treatments. 
+The scale is logodds of pulling the left lever.  
+db13 is the difference between no-partner/partner treatments when the prosocial option was on the right. 
+db24 is the same difference, but for when the prosocial option was on the left. 
+Not supportive of theory that more prosocial pulls when partner present.  
+
+Posterior prediction check
+```{r code11.14}
+
+pl <- by( d$pulled_left , list( d$actor , d$treatment ) , mean )
+pl[1,] #the class of pl is 'by' !!!!
+#Dim of pl is 7 4. So these are estimates by chimpanzee and condition
+```
+
+We don’t want an exact match—that would mean overfitting. But we would like to understand how the model sees the data and learn from any anomalies
+
+Plotting data vs predictions
+
+```{r code11.15}
+plot( NULL , xlim=c(1,28) , ylim=c(0,1) , xlab="" ,
+      ylab="proportion left lever" , xaxt="n" , yaxt="n" )
+axis( 2 , at=c(0,0.5,1) , labels=c(0,0.5,1) )
+abline( h=0.5 , lty=2 )
+for ( j in 1:7 ) abline( v=(j-1)*4+4.5 , lwd=0.5 )
+for ( j in 1:7 ) text( (j-1)*4+2.5 , 1.1 , concat("actor ",j) , xpd=TRUE )
+for ( j in (1:7)[-2] ) {
+  lines( (j-1)*4+c(1,3) , pl[j,c(1,3)] , lwd=2 , col=rangi2 )
+  lines( (j-1)*4+c(2,4) , pl[j,c(2,4)] , lwd=2 , col=rangi2 )
+}
+points( 1:28 , t(pl) , pch=16 , col="white" , cex=1.7 )
+points( 1:28 , t(pl) , pch=c(1,1,16,16) , col=rangi2 , lwd=2 )
+yoff <- 0.01
+text( 1 , pl[1,1]-yoff , "R/N" , pos=1 , cex=0.8 )
+text( 2 , pl[1,2]+yoff , "L/N" , pos=3 , cex=0.8 )
+text( 3 , pl[1,3]-yoff , "R/P" , pos=1 , cex=0.8 )
+text( 4 , pl[1,4]+yoff , "L/P" , pos=3 , cex=0.8 )
+mtext( "observed proportions\n" )
+
+
+
+```
+
+Now the predictions.
+M doesn't give code for this, but I will try to just recycle previous code.  
+Had to make pm into a matrix - hey it worked!
+
+```{r code11.16}
+dat <- list( actor=rep(1:7,each=4) , treatment=rep(1:4,times=7) )
+p_post <- link_ulam( m11.4 , data=dat )
+p_mu <- apply( p_post , 2 , mean )
+p_ci <- apply( p_post , 2 , PI )
+
+#need to make a 7 x 4 variable that can be substituted for pl
+#can we just turn p_mu into a matrix?
+pm <- matrix(p_mu,nrow=7,byrow=T)
+
+plot( NULL , xlim=c(1,28) , ylim=c(0,1) , xlab="" ,
+      ylab="proportion left lever" , xaxt="n" , yaxt="n" )
+axis( 2 , at=c(0,0.5,1) , labels=c(0,0.5,1) )
+abline( h=0.5 , lty=2 )
+for ( j in 1:7 ) abline( v=(j-1)*4+4.5 , lwd=0.5 )
+for ( j in 1:7 ) text( (j-1)*4+2.5 , 1.1 , concat("actor ",j) , xpd=TRUE )
+for ( j in (1:7)[-2] ) {
+  lines( (j-1)*4+c(1,3) , pm[j,c(1,3)] , lwd=2 , col=rangi2 )
+  lines( (j-1)*4+c(2,4) , pm[j,c(2,4)] , lwd=2 , col=rangi2 )
+}
+points( 1:28 , p_mu , pch=16 , col="white" , cex=1.7 )
+points( 1:28 , p_mu , pch=c(1,1,16,16) , col="black" , lwd=2 )
+yoff <- 0.01
+text( 1 , pm[1,1]-yoff , "R/N" , pos=1 , cex=0.8 )
+text( 2 , pm[1,2]+yoff , "L/N" , pos=3 , cex=0.8 )
+text( 3 , pm[1,3]-yoff , "R/P" , pos=1 , cex=0.8 )
+text( 4 , pm[1,4]+yoff , "L/P" , pos=3 , cex=0.8 )
+mtext( "Posterior predicted proportions\n" )
+
+
+```
+
+Why not do a 2 x 2 analysis, with one factor for side and one for partner? Because the driving hypothesis of the experiment is that the prosocial option will be chosen more when the partner is present - i.e. an interaction effect  
+
+Can build a model without the interaction and use LOOIS or WAIC to compare it to m11.4. You can Will show that the simpler model will do just fine because no evidence of interaction.
+
+```{r code11.17-18}
+#make new variables for left and partner
+d$side <- d$prosoc_left + 1 # right 1, left 2
+d$cond <- d$condition + 1 # no partner 1, partner 2
+## now run model - nb need to add log_lik=T
+dat_list2 <- list(
+  pulled_left = d$pulled_left,
+  actor = d$actor,
+  side = d$side,
+  cond = d$cond )
+m11.5 <- ulam(
+  alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a[actor] + bs[side] + bc[cond] ,
+    a[actor] ~ dnorm( 0 , 1.5 ),
+    bs[side] ~ dnorm( 0 , 0.5 ),
+    bc[cond] ~ dnorm( 0 , 0.5 )
+  ) ,
+  data=dat_list2 , chains=4 , log_lik=TRUE )
+
+```
+
+Now we compare models
+
+```{r code11.19}
+#n the book this is code 11.20
+compare( m11.5 , m11.4 , func=LOO ) #actually gives PSIS rather than LOO?! PSIS is specified in the book here
+```
+
+## Lecture 12, around 22 mins
+Relative and absolute 
+
+Differences between parameters on log odds scale are relative differences.  
+Not talking about probability of event happening: rather it is relative to another condition, ignoring other predictors.  
+To predict rate of event in the world, need to go to absolute scale.  
+On absolute scale, ceiling and floor effects happen.  
+The base rate matters.  
+Proportional odds - this is a relative effect measure, but can be very big when absolute effect is small.  This is computed below. Note we exponentiate the difference to get back to odds scale.
+
+```{r code11.22}
+post <- extract.samples(m11.4)
+mean( exp(post$b[,4]-post$b[,2]) )
+
+```
+Code 11.22 computes proportional odds for condition 4 and condition 2. The mean difference indicates that whatever the odds are for condition 4, in condition 2 it is around 92% of that value.  
+
+Sharks kill 5 people annually.  
+Deer kill 130 people annually.  
+Base rate effect - exposure is higher.  
+If you were a penguin, risk of sharks higher than deer.
+Relative effects can be misleading, because ignore base rate.  Make tiny risks seem huge.  
+eg doubling of risk for rare disease.  
+If you are a penguin, what matters is relative risk of sharks, conditioning on being in water.  
+Need to think of both absolute and relative risks - both important.  
+
+## Aggregated binomial.
+Logistic regression when outcomes are 0 and 1.  
+Aggregated binomial is v similar but if order of trials does not matter can be aggregated.
+
+Use grad school applications to 6 academic depts at UC Berkeley.
+```{r code.11.28}
+data(UCBadmit)
+d<-UCBadmit
+```
+Now model this to see if gender affects success.  
+This time we need to add value in dbinom for N, i.e. N applications. This is read from the data.
+
+```{r code11.29}
+d$gid <- ifelse( d$applicant.gender=="male" , 1 , 2 ) 
+m11.7 <- quap(
+  alist(
+    admit ~ dbinom( applications , p ) ,
+    logit(p) <- a[gid] ,
+    a[gid] ~ dnorm( 0 , 1.5 )
+  ) , data=d )
+precis( m11.7 , depth=2 )
+
+
+
+```
+Means tell us males had higher average rate of admission.   
+
+Now need to contrast relative difference
+
+```{r code11.30}
+post <- extract.samples(m11.7)
+diff_a <- post$a[,1] - post$a[,2] #difference in rate of admission
+diff_p <- inv_logit(post$a[,1]) - inv_logit(post$a[,2]) #difference in probability of admission
+precis( list( diff_a=diff_a , diff_p=diff_p ) )
+
+
+```
+
+Next we do posterior validation check.
+
+```{r code11.31}
+postcheck( m11.7 , n=1e4 )
+# draw lines connecting points from same dept
+d$dept_id <- rep( 1:6 , each=2 ) #code in pdf had id as going 1:7, corrected here
+for ( i in 1:6 ) {
+  x <- 1 + 2*(i-1)
+  y1 <- d$admit[x]/d$applications[x]
+  y2 <- d$admit[x+1]/d$applications[x+1]
+  lines( c(x,x+1) , c(y1,y2) , col=rangi2 , lwd=2 )
+  text( x+0.5 , (y1+y2)/2 + 0.05 , d$dept[x] , cex=0.8 , col=rangi2 )
+  text(6,.8,'blue is observed, black circles are predicted and CI')
+}
+
+```
+
+Note poor prediction.   
+In real data, only 2 courses, C and E, where women less likely to be admitted.  
+Problems because mean and women did not apply to same depts, and depts differ in rates of prediction.  
+Corresponds a back-door path to gender from department.  
+
+```{r showdag}
+require(dagitty)
+dagpipe <- dagitty("dag{
+  G ->D
+  D ->A
+  G -> A}")
+coordinates( dagpipe ) <- list( x=c(G=0,D=1,A=2) ,
+                                y=c(G=0,D=-1,A=0) )
+drawdag( dagpipe)
+
+```
+So we want a model that can estimate fem and male admission rates by dept.  
+Estimate unique intercepts to estimate backdoor path through D - i.e. stratification by dept.
+Can then ask what is average difference in admissions rate across depts, i.e. conditioning by dept.
+
+```{r code11.32}
+d$dept_id <- rep(1:6,each=2)
+m11.8 <- quap(
+  alist(
+    admit ~ dbinom( applications , p ) ,
+    logit(p) <- a[gid] + delta[dept_id] ,
+    a[gid] ~ dnorm( 0 , 1.5 ) ,
+    delta[dept_id] ~ dnorm( 0 , 1.5 ) #estimate avg admissions rate per dept
+  ) , data=d )
+precis( m11.8 , depth=2 )
+
+```
+
+
+Note that the a parameters are now quite different from prior model: v similar for male and female.  
+This is Simpson's paradox: add a new variable to a model and prior effect reverses.  
+
+Based on back-door paths  
+
+NB Need to be clear about research question: is the reversal meaningful or spurious. 
+
+Overall impression from the data: females apply to different depts, tend to apply to depts that are hard to get into.  
+
+```{r code11.34}
+pg <- sapply( 1:6 , function(k)
+d$applications[d$dept_id==k]/sum(d$applications[d$dept_id==k]) )
+rownames(pg) <- c("male","female")
+colnames(pg) <- unique(d$dept)
+round( pg , 2 )
+
+```
+
+Note that intervention you adopt depends crucially on which model you have.
+
+## Poisson distribution
+Lecture 12, around 48 mins
