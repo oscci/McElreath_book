@@ -68,7 +68,7 @@ m11.2 <- quap(
     pulled_left ~ dbinom( 1 , p ) ,
     logit(p) <- a + b[treatment] ,
     a ~ dnorm( 0 , 1.5 ), #this gives a fairly flat probability distribution
-    b[treatment] ~ dnorm( 0 , 10 )
+    b[treatment] ~ dnorm( 0 , 1.5 )
   ) , data=d )
 
 set.seed(1999)
@@ -345,7 +345,7 @@ precis( list( diff_a=diff_a , diff_p=diff_p ) )
 Next we do posterior validation check.
 
 ```{r code11.31}
-postcheck( m11.7 , n=1e4 )
+postcheck( m11.7 , n=1e4 ) #this command plots mean and CI for posteriors as blobs/crosses
 # draw lines connecting points from same dept
 d$dept_id <- rep( 1:6 , each=2 ) #code in pdf had id as going 1:7, corrected here
 for ( i in 1:6 ) {
