@@ -1,0 +1,111 @@
+---
+title: "Chapter 12"
+output: html_notebook
+---
+
+## Overdispersed counts
+Models based on normal distributions can be overly sensitive to extreme observations.  
+"Processes are often variable mixtures and this results in thicker tails." (?)
+Student t has thicker tail - can be better for out-of-sample prediction.
+Similarly for count models = if counts arise from mixture of different processes can have more variation and thicker tails.
+
+Variance is 'dispersion'. Binomial has expected variance of Np(1-p). If observed variance exceeds this amount, after conditioning on predictors, then suggests there is an omitted variable that is producing over-dispersion.  
+
+Best solutino is to discover source of extra dispersion and include it in the model. Can also mitigate effects of over-dispersion.  
+
+Multilevel models (ch 14) can handle overdispersion but here we focus on various continuous mixture models.  
+
+### Beta-binomial models
+This is a mixture of binomial distributions.
+Instead of having a single probability of success, we have a model where each observation has its own probability of success. So we need to model the distribution of probabilities.  
+
+Back to UCBadmit data. If we ignore departments, data is over-dispersed.  A beta-binomial model can pick up this variation even if we don't enter department explicitly. 
+
+Model assumes each row of data has its own unobserved probability of admission. Distribution of these probabilities follows beta distribution (which is a probability distribution for probabilities that makes the maths easy). 
+
+Beta distribution has 2 parameters average probability p and a shape parameter theta, which determines how spread out the distribution is.  
+When theta is 2, ever probability from 0 to 1 is equally likely. As theta increases above 2 distributino of probabilities is more concentrated. If theta is < 2 then v dispersed distribution so that extreme probabilities near 0 and 1 are more likely than the mean.  
+
+```{r code12.1}
+require(rethinking) # for dbeta
+pbar <- .5
+par(mfrow=c(2,3))
+for (theta in seq(1:6)){
+  if(theta==6){theta <- 60}
+curve(dbeta2(x,pbar,theta),from=0 ,to =1,
+xlab='probability',ylab='density', main=theta)
+}
+```
+
+Linear model 
+$$A_i \sim BetaBinomial(N_i,p_i,\theta)$$
+$$logit(p_i) = \alpha_G_[i]$$
+$$\alpha_j \sim Normal(0,1.5)$$
+$$\theta = \phi +2$$
+$$\phi \sim Exponential(1)$$
+
+alpha gives intercept for each gender.
+A is outcome (admission). N is applications.
+
+We want dispersion of at least 2 (flat). 
+We know exponential has minimum of zero. So if we add 2 to an exponentially distributed variable, new minimum is 2.
+
+```{r code12.2}
+data(UCBadmit)
+d<-UCBadmit
+d$gid <- ifelse(d$applicant.gender=='male',1L,2L) #codes males as 1 and females as 2.
+dat <- list(A=d$admit,N=d$applications,gid=d$gid)
+dat
+m12.1 <- ulam(
+  alist(
+    A~ dbetabinom(N,pbar,theta),
+    logit(pbar ) <- a[gid],
+    a[gid] ~ dnorm(0,1.5),
+    transpars>theta <<-phi+2.0,  #theta tagged with transpars (transformed parameters) so Stan will return it in the samples
+    phi~dexp(1)
+  ),data=dat, chains=4
+
+  )
+precis(m12.1) #note theta is just phi + 2
+
+```
+
+```{r code12.3}
+post <- extract.samples(m12.1)
+post$da <- post$a[,1] - post$a[,2]
+precis(post,depth=2)
+
+```
+Parameter a[1] is log odds admissions for males and a[2] is log odds for females.  
+da is the difference.
+This model allows each row in the data (ie each combination of dept and gender) to have its own intercept.  
+These unobserved intercepts sampled from beta distribution with mean p and dispersion theta.  
+
+We can plot the distribution
+
+```{r code12.4}
+#couldn't get this to work but here's my version
+#(found afterwards this was because I had missed first line of code that defined gid)
+#draw posterior mean beta distribution
+curve(dbeta2(x,mean(logistic(post$a[2])),mean(post$theta)),from=0,to=1,ylab='Density', xlab='proability admit',ylim=c(0,3),lwd=2,lty=2,col='red',main='female red, male blue')
+
+curve(dbeta2(x,mean(logistic(post$a[1])),mean(post$theta)),from=0,to=1,ylab='Density', xlab='proability admit',ylim=c(0,3),lwd=2,col='blue',add=T)
+
+
+#draw 50 beta distributions samples from posterior
+par(mfrow=c(1,2))
+for (gid in 1:2){
+  mymain<-'Posterior distribution: females'
+  if(gid==1){  mymain<-'Posterior distribution: males'}
+i=1
+    curve(dbeta2(x,p,theta),from=0,to=1,ylab='Density', xlab='proability admit',ylim=c(0,3),lwd=1, main=mymain)
+     text(.4,2.5,'Plausbility of every combination\n of parameter values',cex=.6)
+for (i in 2:50){
+  p <- logistic(post$a[i,gid])
+  theta <- post$theta[i]
+  curve(dbeta2(x,p,theta),from=0,to=1,ylab='Density', xlab='proability admit',ylim=c(0,3),add=T)
+}
+}
+```
+
+
