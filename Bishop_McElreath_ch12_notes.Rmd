@@ -97,15 +97,29 @@ par(mfrow=c(1,2))
 for (gid in 1:2){
   mymain<-'Posterior distribution: females'
   if(gid==1){  mymain<-'Posterior distribution: males'}
-i=1
-    curve(dbeta2(x,p,theta),from=0,to=1,ylab='Density', xlab='proability admit',ylim=c(0,3),lwd=1, main=mymain)
+  i=1
+  p <- logistic(post$a[i,gid])
+  theta <- post$theta[i]
+  curve(dbeta2(x,p,theta),from=0,to=1,ylab='Density', xlab='probability admit',ylim=c(0,3),lwd=1, main=mymain)
      text(.4,2.5,'Plausbility of every combination\n of parameter values',cex=.6)
 for (i in 2:50){
   p <- logistic(post$a[i,gid])
   theta <- post$theta[i]
-  curve(dbeta2(x,p,theta),from=0,to=1,ylab='Density', xlab='proability admit',ylim=c(0,3),add=T)
+  curve(dbeta2(x,p,theta),from=0,to=1,ylab='Density', xlab='probability admit',ylim=c(0,3),add=T)
 }
 }
+dev.off()
+postcheck(m12.1)
+text(6,.7,'raw data is blue\nprediction is black,\n with + as 89% prediction interval')
 ```
+
+Doesn't predict much difference between depts; does predict slightly higher for female than male in each dept. 
+M stresses v wide prediction intervals that capture all the points, but in other respects this isn't a v good model!
+
+I tried rerunning with different theta values - either +3 or +0.
+Affects shape of the curves for males and females but prediction not much affected.
+
+It's a nice idea to compare same dataset using different methods. In theory would like to do this with some of the other datasets we've worked with.  
+
 
 
