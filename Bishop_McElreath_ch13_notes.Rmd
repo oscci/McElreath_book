@@ -1,0 +1,305 @@
+---
+title: "ch 13 notes"
+output: html_notebook
+---
+
+Uses eg from tadpoles in tanks. Dependent variable in N surviving.
+Initial count is density. We start with 10, 25 or 35 tadpoles per tank.
+Tank is a cluster variable.
+There may be differences between tanks.
+We need multilevel model, in which we estimate intercept for each tank and variation among tanks.
+The logit function gives a unique log-odds for each tank.  
+The prior is Normal (0, 1.5).
+
+$$ S_i \sim Binomial(N_i,p_i)$$
+
+$$logit(p_i) = \alpha_{T_i}$$
+$$\alpha_j \sim Normal(0,1.5) $$
+
+```{r code13.2}
+#make tank cluster variable
+library(rethinking)
+data(reedfrogs)
+d <- reedfrogs
+d$tank <- 1:nrow(d)
+
+dat <- list(
+  S = d$surv,
+  N = d$density, 
+  tank = d$tank)
+#approximate posterior
+m13.1 <- ulam(
+  alist(
+    S ~ dbinom(N,p),
+    logit(p) <- a[tank],
+    a[tank] ~ dnorm(0,1.5)
+  ), data=dat, chains=4, log_lik=TRUE)
+
+```
+
+To try to understand this, compare with original data.
+This confirms that if you take the inverse logit of the a-values, they fall on straight line with proportion who survive in each tank.
+
+```{r plot13.1}
+posts<-precis(m13.1,depth=2)
+mydf<-as.data.frame(posts$mean)
+colnames(mydf)<-'mean.est'
+mydf$density<-d$density
+densityfac<-as.factor(mydf$density)
+mydf$surv <- d$surv
+plot(mydf$surv/mydf$density,mydf$mean.est,col=densityfac, pch=16,xlab='proportion survive',ylab='ulam intercept estimate')
+mydf$invlogit <- exp(mydf$mean.est)/(1+exp(mydf$mean.est)) #formula for inverse logit!
+plot(mydf$surv/mydf$density,mydf$invlogit,col=densityfac, pch=16,xlab='proportion survive',ylab='inverse logit (ulam intercept estimate)')
+
+```
+
+For multilevel model, pool information across tanks: the prior for the a parameters is a function of new parameters.  
+New parameter bar alpha which is average.
+The Gaussian distribution with mean of bar alpha and sd of sigma is prior for each tank's intercept.  
+
+
+$$ S_i \sim Binomial(N_i,p_i)$$
+$$logit(p_i) = \alpha_{T_i}$$
+
+
+
+$$\alpha_j \sim Normal(\overline{\alpha}, \sigma)$$
+$$\overline{\alpha} \sim Normal(0, 1.5)$$
+$$\sigma \sim Exponential(1)$$
+
+$$\alpha = \beta$$
+
+Prior for tank intercepts is function of bar alpha and sigma.
+Multilevel because there are parameters for prior for each tank intercept, but that prior itself has priors.
+The parameters for parameters are known as hyperparameters.
+Can't fit model with quap, becuause it can't see all the levels.
+
+```{r code13.3, message=FALSE}
+m13.2 <- ulam(
+alist(
+S ~ dbinom(N, p),
+logit(p) <- a[tank],
+a[tank] ~ dnorm(a_bar, sigma),
+a_bar ~ dnorm(0,1.5),
+sigma ~ dexp(1)
+), data=dat,chains=4,log_lik=T)
+
+precis(m13.2,depth=2)
+compare(m13.1,m13.2)
+
+```
+I want to see how the estimates vary, so I will plot as before, but this time with both models in the plot.
+
+```{r plot13.1_2}
+posts<-precis(m13.1,depth=2)
+mydf<-as.data.frame(posts$mean)
+colnames(mydf)<-'mean.est'
+mydf$density<-d$density
+densityfac<-as.factor(mydf$density)
+mydf$surv <- d$surv
+mydf$p.surv <- d$surv/d$density
+plot(mydf$p.surv,mydf$mean.est,col=densityfac, pch=16,xlab='proportion survive',ylab='ulam intercept estimate')
+mydf$invlogit <- exp(mydf$mean.est)/(1+exp(mydf$mean.est)) #formula for inverse logit!
+plot(mydf$p.surv,mydf$invlogit,col=densityfac, pch=16,xlab='proportion survive',ylab='inverse logit (ulam intercept estimate)')
+posts2<-precis(m13.2,depth=2)
+mydf2<-as.data.frame(posts$mean)
+colnames(mydf2)<-'mean.est2'
+mydf$mean.est2<-mydf2$mean.est2
+plot(mydf$mean.est,mydf$mean.est2) #hmm estimates seem the same.
+
+#presumably the difference is in sigmas?
+mydfs1<-as.data.frame(posts$sd)
+mydfs2<-as.data.frame(posts2$sd)
+
+#nb: for plotting have to specify range, because in addition to 48 sigma values, there are also rows for a_bar and sigma estimates.
+#Weirdly, when I check mydf2$mean.est2 there are only 48 values
+#But for mydfs2 there are 50.
+
+plot(mydfs1[1:48,1],mydfs2[1:48,1],col=densityfac, pch=16)
+abline(0,1)
+
+```
+
+
+Black are smallest density and green are largest.  
+SD of mean estimate for model2 falls above the line, whereas others are closer to the line - this means estimates of sd are higher in model 2 -and this seems esp true for black, where the proportions are estimated based on smaller N.
+
+```{r comparemodels}
+precis(m13.1,depth=2)
+summary(m13.1)
+precis(m13.2,depth=2)
+summary(m13.2)
+compare(m13.1,m13.2)
+
+```
+I do struggle with this, but here is what book says.  
+Only 21 effective parameters in multilevel model (where do we see that? is it pWAIC?).
+'There are 28 fewer effective parameters than actual parameters' - but are't there 50 actual parameters rather than 49?  
+'The prior assigned to each intercept shrinks them all towards the mean, alpha-bar.'
+?
+(I need to check the model comparison chapter again).  
+
+In code 13.5, M now plots means for the two models (but differently from how I have done it).
+
+```{r code13.5}
+#extract Stan samples
+post <-extract.samples(m13.2)
+#compute mean intercept for each tank
+#also transform to probability with logistic
+d$propsurv.est <- logistic(apply(post$a,2,mean))
+
+#display raw proportions surviving in each tank
+plot(d$propsurv,ylim=c(0,1),pch=16,xaxt='n',xlab='tank',ylab='proportion survival',col=rangi2)
+axis(1, at=c(1,16,32,48), labels=c(1,16,32,48))
+
+#overlay posterior means
+points(d$propsurv.est)
+
+#mark posterior mean probability across tanks
+abline(h=mean(inv_logit(post$a_bar)),lty=2)
+abline(h=median(inv_logit(post$a_bar)),lty=2,col='red') #added by DB
+
+
+#draw vertial dividers between tank densities
+abline(v=16.5,lwd=0.5)
+abline(v=32.5,lwd=0.5)
+text(8,0,'small tanks')
+text(16+8,0,'medium tanks')
+text(32+8,0,'large tanks')
+
+
+```
+Filled blue points are raw proportions.  
+Black circles are estimated intercepts.
+Horiz dashed line is esimtated median survival proportion.
+(?? it is computed using mean - however, I added median in the code and it gives the same result -red dashed line)
+
+Note that in every case the multilevel estimate is closer to the dashed line than the raw empirical estimate is.  
+This is shrinkage - arises from regularisation - see chapter 7 (I cannot remember chapter 7...)
+
+More shrinkage for the small tanks.  
+Also more shrinkage for points that are further from median line.
+
+Shrinkage effects arise because of pooling across clusters to improve estimates.  
+
+Now we sample from posterior to visualise inferred population distribution of survival.
+
+```{r code13.6}
+plot(NULL, xlim=c(-3,4),ylim=c(0,0.35),xlab='log-odds survive',ylab='density')
+for (i in 1:100){
+  curve(dnorm(x,post$a_bar[i],post$sigma[i]),add=TRUE,col=col.alpha("black",0.2))
+}
+  #sample 8000 imaginary tanks from posterior distribution
+  sim_tanks <- rnorm(8000,post$a_bar,post$sigma)
+  
+  #transform to probability and visualise
+  
+  dens(inv_logit(sim_tanks),lwd=2,adj=0.1)
+
+```
+
+# Varying effects and underfitting/overfitting trade-off
+
+Major benefit of using varying effect estimates instead of empirical raw estimates is they provide more accurate estimates of individual cluster (tank) intercepts. 
+This is because they do a better job of trading off underfitting and overfitting.  
+
+Suppose we had frogs in natural ponds. 
+To predict survival we could 
+1) Assume common intercept for all ponds
+2) Assume each pond is different (model with amnesia)
+3) Parital pooling - use adaptive regularising prior.  
+
+If we adopt common intercept, estimate is likely to be quite precise, but is unlikely to exactly match the mean of any particular pond. Total sample mean underfits the data. 
+
+If we adopt (2) and each pond has its own intercept, then there is little data for each estimate, so estimates are imprecise.  Especially true of smaller ponds, where less data in the estimate.  Error of estimates is high and there is overfitting. 
+In effect, assumes variation among ponds is infinite.
+
+Partial pooling is intermediate. WIll be better especially in cases where there's little data for some cases.  
+
+Now we do a simulation.
+
+We'll use same basic multilevel binomial model as before but with ponds instead of tanks.
+```{r code13.7-11}
+a_bar <- 1.4 #text says 1.4 but e.g. gave 1.5!
+sigma <- 1.5
+nponds <- 60
+Ni <- as.integer(rep(c(5,10,25,35),each=15))
+#Ni <- rep(25,60) #added by me to see what happens if all uniform
+set.seed(5005)
+a_pond <- rnorm(nponds,mean=a_bar, sd=sigma) #normally distributed log odds values
+dsim <- data.frame(pond=1:nponds,Ni=Ni,true_a=a_pond)
+
+#simulate survivors
+dsim$Si <- rbinom(nponds, prob=logistic(dsim$true_a),size=dsim$Ni)
+dsim$p_nopool <- dsim$Si/dsim$Ni
+
+```
+
+The p_nopool values are empirical probabilities of survival. These correspond to estimate we'd get if we used a model with a dummy variable for each pond and flat priors so no regularisation.  
+
+Now we use ulam to compute partial-pooling estimates.
+
+```{r code13.13}
+dat <- list(Si=dsim$Si,Ni=dsim$Ni,pond=dsim$pond)
+m13.3 <- ulam(
+  alist(
+    Si ~ dbinom(Ni,p),
+    logit(p) <- a_pond[pond],
+    a_pond[pond] ~ dnorm(0,1.5),
+    sigma ~ dexp(1)
+  ), data=dat,chains=4
+ 
+)
+
+precis(m13.3,depth=2)
+
+```
+Now we add to the data frame the estimates with partial pooling
+
+```{r code13.15_18}
+post <- extract.samples(m13.3)
+dsim$p_partpool <- apply(inv_logit(post$a_pond),2,mean)
+dsim$p_true <- inv_logit(dsim$true_a)
+nopool_error <- abs(dsim$p_nopool-dsim$p_true)
+partpool_error <- abs(dsim$p_partpool - dsim$p_true)
+
+plot(1:60,nopool_error,xlab='pond',ylab='absolute error',
+     col=rangi2,pch=16)
+points(1:60,partpool_error)
+
+plot(nopool_error,partpool_error,col=as.factor(dsim$Ni),pch=16)
+abline(0,1)
+abline(h=mean(partpool_error),lty=2)
+abline(v=mean(nopool_error),lty=2)
+```
+I've done my own plot which I find clearer for comparing the two methods.  
+Colour coding is black = tiny, red=small, green = med, blue = large
+
+The mean error is not all that different in my simulation, but it is larger for the no_pool error, which is the point M wants us to understand from this simulation.
+
+Also far less error with larger samples. Though M notes here we have no confounding; with confounding, larger samples can make thngs worse. 
+
+I'm curious that M hasn't included a comparison with complete pooling! So I will try plotting that. Then you just assume overall mean for all ponds, regardless of size.
+
+```{r completepool}
+dsim$avgpond <- mean(dsim$p_true)
+
+allpool_error <- abs(dsim$p_true-dsim$avgpond)
+
+```
+
+
+```{r code13.19}
+nopool_avg <- aggregate(nopool_error, list(dsim$Ni),mean)
+partpool_avg <- aggregate(partpool_error, list(dsim$Ni),mean)
+allpool_avg <- aggregate(allpool_error,list(dsim$Ni),mean)
+
+mycompare <- cbind(allpool_avg,nopool_avg[,2],partpool_avg[,2])
+colnames(mycompare)<- c('size','all.pool','no.pool','part.pool')
+mycompare
+```
+
+So in this case, where there is a lot of variation in pool size, then we get differences.
+
+But what if you have a lot of similar pools? I tried rerunning with all pools set to size = 5. NB - M notes you can try different samples without needing to rerun the model.
+You still get more error with the allpool case.
