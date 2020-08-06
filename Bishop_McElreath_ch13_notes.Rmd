@@ -50,7 +50,7 @@ mydf$surv <- d$surv
 plot(mydf$surv/mydf$density,mydf$mean.est,col=densityfac, pch=16,xlab='proportion survive',ylab='ulam intercept estimate')
 mydf$invlogit <- exp(mydf$mean.est)/(1+exp(mydf$mean.est)) #formula for inverse logit!
 plot(mydf$surv/mydf$density,mydf$invlogit,col=densityfac, pch=16,xlab='proportion survive',ylab='inverse logit (ulam intercept estimate)')
-
+abline(0,1)
 ```
 
 For multilevel model, pool information across tanks: the prior for the a parameters is a function of new parameters.  
@@ -273,11 +273,12 @@ abline(h=mean(partpool_error),lty=2)
 abline(v=mean(nopool_error),lty=2)
 ```
 I've done my own plot which I find clearer for comparing the two methods.  
-Colour coding is black = tiny, red=small, green = med, blue = large
+Colour coding is black = tiny, red=small, green = med, blue = large.
 
-The mean error is not all that different in my simulation, but it is larger for the no_pool error, which is the point M wants us to understand from this simulation.
 
-Also far less error with larger samples. Though M notes here we have no confounding; with confounding, larger samples can make thngs worse. 
+The mean error (dotted line) is not all that different in my simulation, but it is a bit larger for the no_pool error, which is the point M wants us to understand from this simulation.
+
+Also far less error with larger samples. Though M notes here we have no confounding; with confounding, larger samples can make things worse. 
 
 I'm curious that M hasn't included a comparison with complete pooling! So I will try plotting that. Then you just assume overall mean for all ponds, regardless of size.
 
@@ -301,5 +302,5 @@ mycompare
 
 So in this case, where there is a lot of variation in pool size, then we get differences.
 
-But what if you have a lot of similar pools? I tried rerunning with all pools set to size = 5. NB - M notes you can try different samples without needing to rerun the model.
+But what if you have a lot of similar pools? I tried rerunning with all pools set to size = 5  or all set to 25. NB - M notes you can try different samples without needing to rerun the model.
 You still get more error with the allpool case.
