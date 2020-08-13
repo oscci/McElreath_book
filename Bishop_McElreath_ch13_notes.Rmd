@@ -336,24 +336,20 @@ dat_list <- list(
   treatment = as.integer(d$treatment)
 )
 set.seed(13)
-m13.4 <- ulam(
+m13.4a <- ulam(
     alist(
     pulled_left ~ dbinom( 1 , p ) ,
-    logit(p) <- a[actor] + g[block_id]+b[treatment] ,
+    logit(p) <- a[actor] + g[block_id] + b[treatment] ,
     b[treatment] ~ dnorm( 0 , 0.5 ),
     #adaptive priors
     a[actor]~ dnorm(a_bar,sigma_a),
-    g[block_id] ~ dnorm(0,sigma_g),
+    g[block_id] ~ dnorm(g_bar,sigma_g),
     ## hyperpriors
     a_bar ~ dnorm(0,1.5),
+    g_bar ~ dnorm(0,1.5),
     sigma_a ~ dexp(1),
     sigma_g ~ dexp(1)
     ), data =dat_list, chains=4, cores=4,log_lik=TRUE)
-
-  ) ,
-  data=dat_list , chains=4,log_lik=T )
-
-  
 ```
 This one ran faster than I expected!  
 Warning about DIVERGENT TRANSITIONS.  
@@ -361,7 +357,7 @@ Will explain more about this later (also covered in lecture).
 
 Now we will explore the posterior.  Precis shows all the estimated parameters, based on 2000 samples from 4 independent chains.
 ```{r code 13.22}
-precis(m13.4, depth=2)
+precis(m13.4a, depth=2)
 
 
 ```
@@ -442,7 +438,7 @@ coeftab(m13.4,m13.6)
 coeftab is v useful for comparing coefficients. Can see v little impact of including treatment as a random effect. 
 
 ## Divergent transitions
-Hamiltonian Monte Carlo simulates frictionless flow of  aparticle on a surface. Each transition is a flick of the particle, and total energy at start should be equal to energy at end. In a purely mathematical system this is true. 
+Hamiltonian Monte Carlo simulates frictionless flow of  a particle on a surface. Each transition is a flick of the particle, and total energy at start should be equal to energy at end. In a purely mathematical system this is true. 
 In numerical system not always true - energy can be divergent. Esp when posterior distribution is v steep in some region of parameter space. 
 Divergent transitions are rejected. But they indicate a region that is hard to explore correctly. Chain is inefficient - common with multilevel models. 
 2 ways to deal with it. Can use adapt_delta in Stan - tunes the simulation. 
@@ -497,10 +493,8 @@ m13.7nc <- ulam(
   alist(
     v ~ normal(0,3),
     z ~ normal(0,1),
-    gq > real[1]:x< <-z*exp(v)
-    #I have *no idea* how that code in line above
-#though I think the middle bit  between > and < is somehow defined as a range. 
-#I assume this syntax applies the formula z*exp(v) to the range.
+    gq > real[1]:x<<-z*exp(v)
+
   ), data = list(N=1),chains=4)
 
 precis(m13.7nc)
@@ -511,6 +505,13 @@ plot(e$z,e$v,main='This is what m13.7nc is sampling')
 plot(e$z*exp(e$v),e$x,main='Recomputing x from z and v')
 ```
 
+Explanation of gq! (thanks to Filip)
+https://www.rdocumentation.org/packages/rethinking/versions/2.12/topics/ulam
+8:21
+
+"It is also possible to use gq to evaluate the assignment only after sampling, in Stan's generated quantities block. This is useful for derived values that are not needed in computing the posterior but may be useful afterwards. For example, constrasts could be calculated this way. In the examples, the line:gq> bp_diff <- bp[1] - bp[2]is used to calculate the posterior distribution of the difference between the two parameters. The code is added to Stan's generated quantities, so that it doesn't slow down the model block."
+
+Haven't had time to do this, but my guess is that we could leave out the gq code lines, and just compute x afterwards : it should not affect how the code runs.
 
 Here's more explanation from p 421-422 about the logic of this. 
 In original model ,as v changes, x changes dramatically. This is a centred parameterization - this just means the distribution of x is conditional on one or more other parameters. 
@@ -560,7 +561,7 @@ m13.4nc <- ulam(
     sigma_a ~ dexp(1),
     sigma_g ~ dexp(1),
     gq> vector[actor]:a <<- a_bar+z*sigma_a,
-        gq> vector[block_id]:g <<-x*sigma_g
+    gq> vector[block_id]:g <<-x*sigma_g
     ), data =dat_list, chains=4, cores=4,log_lik=TRUE)
 
 precis(m13.4nc)
