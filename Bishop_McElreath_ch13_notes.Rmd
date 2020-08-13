@@ -304,3 +304,362 @@ So in this case, where there is a lot of variation in pool size, then we get dif
 
 But what if you have a lot of similar pools? I tried rerunning with all pools set to size = 5  or all set to 25. NB - M notes you can try different samples without needing to rerun the model.
 You still get more error with the allpool case.
+
+## 13.3 More than one type of cluster
+
+In chimpanzee study from earlier chapter, data are lever-pulls by chimps. Each pull belongs to a particular chimpanzee. But each chimp does 6 experimental blocks. Could have unique intercepts for each chim as well as each block.  
+With MLL can look at both kinds of clusters simulataneously.  
+Where actors are not nested in unique blocks, we have a cross-classified model. Software treats as same as hierarchical design.
+ 
+Model from chapter 11 (m11.4) was
+m11.4 <- ulam(
+  alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a[actor] + b[treatment] ,
+    a[actor] ~ dnorm( 0 , 1.5 ),
+    b[treatment] ~ dnorm( 0 , 0.5 )
+  ) ,
+  data=dat_list , chains=4,log_lik=T )
+  
+  Now we add intercepts for blocks as well
+  
+```{r code13.21}
+library(rethinking)
+data(chimpanzees)
+d <- chimpanzees
+d$treatment <- 1 + d$prosoc_left + 2*d$condition #codes as 1-4
+
+dat_list <- list(
+  pulled_left = d$pulled_left,
+  actor = d$actor,
+  block_id = d$block,
+  treatment = as.integer(d$treatment)
+)
+set.seed(13)
+m13.4 <- ulam(
+    alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a[actor] + g[block_id]+b[treatment] ,
+    b[treatment] ~ dnorm( 0 , 0.5 ),
+    #adaptive priors
+    a[actor]~ dnorm(a_bar,sigma_a),
+    g[block_id] ~ dnorm(0,sigma_g),
+    ## hyperpriors
+    a_bar ~ dnorm(0,1.5),
+    sigma_a ~ dexp(1),
+    sigma_g ~ dexp(1)
+    ), data =dat_list, chains=4, cores=4,log_lik=TRUE)
+
+  ) ,
+  data=dat_list , chains=4,log_lik=T )
+
+  
+```
+This one ran faster than I expected!  
+Warning about DIVERGENT TRANSITIONS.  
+Will explain more about this later (also covered in lecture).  
+
+Now we will explore the posterior.  Precis shows all the estimated parameters, based on 2000 samples from 4 independent chains.
+```{r code 13.22}
+precis(m13.4, depth=2)
+
+
+```
+
+Note that number of effective samples varies a lot between parametrs. Sigma_g is low - it spends a lot of time near a boundary (minimum of zero). Rhat values above 1.00 indicate inefficient sampling.  
+
+Compare sigma_a to sigma_g - sigma_a is much bigger; indicates estimated variation among actors is a lot larger than estimated variation among blocks.  
+Can see this also in plot. Note, the b values are priors for blocks, the a-values are adaptive priors for actors, which depend on a_bar and sigma_a, and the g-values are adaptive priors for blocks, which depend on sigma_g.  
+a_bar, sigma_a and sigma_g are hyperpriors.  
+
+```{r plotm13.4}
+plot(precis(m13.4,depth=2))
+```
+
+We can compare this model with a model that ignores block.  
+```{r code13.23}
+
+set.seed(14)
+m13.5 <- ulam(
+    alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a[actor] +b[treatment] ,
+    b[treatment] ~ dnorm( 0 , 0.5 ),
+    #adaptive priors
+    a[actor]~ dnorm(a_bar,sigma_a),
+    ## hyperpriors
+    a_bar ~ dnorm(0,1.5),
+    sigma_a ~ dexp(1)
+    ), data =dat_list, chains=4, cores=4,log_lik=TRUE)
+
+compare(m13.4,m13.5)
+#pWAIC is effective N parameters
+  
+```
+
+Note that the addition of block makes very little difference to WAIC. Sigma_g is very low - mean of each of the g parameters are strongly shrunk towards zero.  
+
+I will now try to create figure 13.4. Had to google to remember how to extract posterior samples, but here it is.
+
+```{r tryfig13.4b}
+
+mye <- extract.samples(m13.4)
+dens(mye$sigma_g,xlim=c(0,4),main='Model 13.4 estimates of hyperprior sigmas\nblack is block, red is actor')
+dens(mye$sigma_a, add=TRUE,col='red')
+#Yes!!
+```
+
+Note on model selection. M cautions against selecting m13.4 as best model - better to show both models to understand underlying processes - including the fact that block adds v little to the model.  
+
+Can we also use partial pooling on the treatment effects. This would mean treating as random effects rather than fixed effects.  
+The fact that the treatment was determined by the experimenter does not make it a fixed effect. The key question is whether you could reassign the index values without changing meaning of the model - ie. units are exchangeable.
+
+Shows the model as m13.6, but notes that adding treatment doesn't change much. 
+
+```{r code13.25}
+
+set.seed(15)
+m13.6 <- ulam(
+    alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- a[actor] +g[block_id] + b[treatment] ,
+
+    #adaptive priors
+    b[treatment] ~ dnorm( 0 , sigma_b ),
+    a[actor]~ dnorm(a_bar,sigma_a),
+    g[block_id] ~ dnorm(0,sigma_g),
+    ## hyperpriors
+    a_bar ~ dnorm(0,1.5),
+    sigma_a ~ dexp(1),
+    sigma_b ~ dexp(1),
+    sigma_g ~ dexp(1)
+    ), data =dat_list, chains=4, cores=4,log_lik=TRUE)
+#compare coefficients of models
+coeftab(m13.4,m13.6)
+
+```
+
+coeftab is v useful for comparing coefficients. Can see v little impact of including treatment as a random effect. 
+
+## Divergent transitions
+Hamiltonian Monte Carlo simulates frictionless flow of  aparticle on a surface. Each transition is a flick of the particle, and total energy at start should be equal to energy at end. In a purely mathematical system this is true. 
+In numerical system not always true - energy can be divergent. Esp when posterior distribution is v steep in some region of parameter space. 
+Divergent transitions are rejected. But they indicate a region that is hard to explore correctly. Chain is inefficient - common with multilevel models. 
+2 ways to deal with it. Can use adapt_delta in Stan - tunes the simulation. 
+But often better to reparameterise the model - specify in a different form that is mathematically identical but numerically different. 
+
+Reparameterisation illustrated with v simple model.
+
+```{r code13.26}
+m13.7 <-ulam(
+  alist(
+    v ~ normal(0,3),
+    x ~ normal(0,exp(v))
+  ), data=list(N=1),chains=4)
+
+precis(m13.7)
+
+traceplot(m13.7)
+
+```
+To visualise problem, we can extract sample
+
+```{r lookatm13.7}
+e<-extract.samples(m13.7)
+plot(e$x[1:200],e$v[1:200])
+
+```
+
+Can see that at low values of v, x contracts around zero.
+
+I just played with this and found the problem is completely fixed if you change v to make the range much smaller
+
+
+```{r code13.26}
+m13.7a <-ulam(
+  alist(
+    v ~ normal(0,.1),
+    x ~ normal(0,exp(v))
+  ), data=list(N=1),chains=4)
+
+precis(m13.7a)
+
+traceplot(m13.7a)
+e<-extract.samples(m13.7a)
+plot(e$x[1:200],e$v[1:200])
+
+```
+
+But that is not what we are doing here! Rather we are learning to reparameterise the model by specifying it in a different way.
+
+```{r code13.27}
+m13.7nc <- ulam(
+  alist(
+    v ~ normal(0,3),
+    z ~ normal(0,1),
+    gq > real[1]:x< <-z*exp(v)
+    #I have *no idea* how that code in line above
+#though I think the middle bit  between > and < is somehow defined as a range. 
+#I assume this syntax applies the formula z*exp(v) to the range.
+  ), data = list(N=1),chains=4)
+
+precis(m13.7nc)
+traceplot(m13.7nc)
+e<-extract.samples(m13.7nc)[1:200]
+plot(e$x,e$v,main='x and v have same \ndistribution as before')
+plot(e$z,e$v,main='This is what m13.7nc is sampling')
+plot(e$z*exp(e$v),e$x,main='Recomputing x from z and v')
+```
+
+
+Here's more explanation from p 421-422 about the logic of this. 
+In original model ,as v changes, x changes dramatically. This is a centred parameterization - this just means the distribution of x is conditional on one or more other parameters. 
+
+Alternative is non-centred parameterisation, accomplished by moving v out of the definition of x.
+
+  $$v \sim Normal(0,3)$$
+  $$z \sim Normal(0,1)$$
+  x = z exp(v)
+  
+  z is defined as standardized x, ie mean zero and sd of 1. To compute x, we reverse the standardization by multiplying z by the standard deviation, exp(v)
+. Don't need to add mean, as it is zero. 
+x is same joint distribution of v and x, but we are not sampling x directly. 
+
+
+## Back to chimps
+
+Notes that you can run ulam with adapt_delta set to a higher value. Will be slower but will have smaller step size in warmup phase. Default step is .95.
+Does reduce N divergent transitions.
+
+```{r code13.28}
+set.seed(13)
+m13.4b <- ulam(m13.4,chains=4,cores=4,control=list(adapt_delta=.99))
+divergent(m13.4b)
+
+```
+
+Helps but far from perfect. Still inefficient.
+
+Non-centred version of model will be better.
+Need to get the parameters out of the adaptive priors and into the linear model. 
+
+```{r code13.29}
+set.seed(13)
+m13.4nc <- ulam(
+    alist(
+    pulled_left ~ dbinom( 1 , p ) ,
+    logit(p) <- z[actor]*sigma_a +  #actor intercepts
+      x[block_id]*sigma_g + #block intercepts (x is also a zscore really)
+    +b[treatment] ,
+    b[treatment] ~ dnorm( 0 , 0.5 ),
+ 
+    z[actor]~ dnorm(0,1),
+    x[block_id] ~ dnorm(0,1),
+
+    a_bar ~ dnorm(0,1.5),
+    sigma_a ~ dexp(1),
+    sigma_g ~ dexp(1),
+    gq> vector[actor]:a <<- a_bar+z*sigma_a,
+        gq> vector[block_id]:g <<-x*sigma_g
+    ), data =dat_list, chains=4, cores=4,log_lik=TRUE)
+
+precis(m13.4nc)
+traceplot(m13.4nc)
+coeftab(m13.4,m13.4nc)
+
+```
+
+Comparing parameters helps understand the model; most estimates are similar, but a_bar very different = presumably because now it is recomputed with addition of z values
+
+M also shows plot which shows how n_eff samples are larger for the new nc model, which is better.  
+
+When to use non-centred? Typically performs better for cluster with low variation, like blocks in m 13.4.  
+
+## Multilevel posterior predictions  
+AIC and WAIC provide simple estimates of out-of-sample model accuracy. (KL divergence).
+
+```{r code13.31}
+#posterior predictions for chimp 2
+chimp <- 2
+d_pred <- list(
+actor=rep(chimp,4),
+treatment=1:4,
+block_id=rep(1,4) #just looking at block 1
+)
+p <- link (m13.4, data=d_pred)
+p_mu <- apply(p,2,mean)
+p_ci <- apply(p,2,PI)
+p_mu
+p_ci
+#So these are mean predictions for 4 treatments for chimp 2 in block 1
+
+#He goes on to explain how you can extract information if you extract.samples and then wrangle the output from that. 
+```
+
+## Posterior predictions for new clusters
+Can simulate new chimps using a_bar and sigma_a, because they define the population, so we can simulate new cases from it.  
+
+This gets hairy. 
+
+```{r code13.36}
+#First we make a link function. This ignores block - gives estimates for treatments by adding treatment effect to a_bar, ie the mean
+
+p_link_abar <- function(treatment){
+  logodds <- with(post,a_bar+b[,treatment]) #with allows you to just specify the dataframe once
+  return(inv_logit(logodds))
+}
+```
+
+
+Now we call the function
+
+```{r code13.37}
+post <- extract.samples(m13.4)
+p_raw <- sapply(1:4,function(i) p_link_abar(i))
+p_mu <- apply(p_raw,2,mean)
+p_ci <- apply(p_raw,2,PI)
+
+plot(NULL,xlab='treatment',ylab='proportion pulled left',
+     ylim=c(0,1),xaxt='n',xlim=c(1,4),main='average actor')
+axis(1,at=1:4,labels=c('R/N','L/N','R/P','L/P'))
+lines(1:4,p_mu)
+shade(p_ci,1:4)
+
+```
+
+
+Now we'll simulate some new chimpanzees using a_bar and sigma_a.
+
+```{r code13.38}
+a_sim <- with(post,rnorm(length(post$a_bar),a_bar,sigma_a))
+p_link_asim <- function(treatment){
+  logodds <- with(post,a_sim+b[,treatment])
+  return(inv_logit(logodds))
+}
+p_raw_asim <- sapply(1:4,function(i) p_link_asim(i))
+p_mu_raw <- apply(p_raw_asim,2,mean)
+p_ci_raw <- apply(p_raw_asim,2,PI)
+
+plot(NULL,xlab='treatment',ylab='proportion pulled left',
+     ylim=c(0,1),xaxt='n',xlim=c(1,4),main='random simulated actor\n(marginal of actor)')
+axis(1,at=1:4,labels=c('R/N','L/N','R/P','L/P'))
+lines(1:4,p_mu_raw)
+shade(p_ci_raw,1:4)
+
+
+plot(NULL,xlab='treatment',ylab='proportion pulled left',
+     ylim=c(0,1),xaxt='n',xlim=c(1,4),main='individual simulated actors')
+axis(1,at=1:4,labels=c('R/N','L/N','R/P','L/P'))
+for(i in 1:100) lines(1:4,p_raw_asim[i,],col=grau(0.25),lwd=2)
+```
+
+
+Note also floor and ceiling effects. 
+
+## Post stratification
+M rather runs out of steam here, but clearly thinks we need to be told about this.  
+It's too much at this point, but the general idea is that you can fit a model using weights that are appropriate for a stratified section of a population.  But you really need estimates from whole population to generate weights - not just the current sample. 
+
+But problems with selection bias.
+
+

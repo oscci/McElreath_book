@@ -580,7 +580,7 @@ compare(m11.9,m11.10,func=PSIS)
 ```
 Note some oddities.
 We get warnings about high Pareto values- this means there are highly influential data points.  
-Score is worse for intercept-only model, but note that it has more parameters (pPSIS)- this is counterintuitive.
+Score is worse for intercept-only model, but note that it has more effective parameters (pPSIS)- this is counterintuitive.
 
 With intercept only model, intercept can take different values, but that means it won't assume that zero tools when zero people.
 So in fact we already have the intercept
@@ -606,14 +606,14 @@ In multinomial, one event is chosen as pivot, and others are modeled relative to
 Can either have case 1 with predictors having different values for different values of outcome, or case 2 where  parameters are distinct for each value of outcome.  
 
 Case 1: predictors matched to outcomes.
-Modeling choise of career for young adults. 
+Modeling choice of career for young adults. 
 One predictor is expected income - same parameter for this in each linear model, to estimate impact of income trait on the probability that career is chosen.
 
 ```{r code11.55}
 #simulate career choice for 500 people
 N <- 500
 income <- c(1,2,5) #expected income for each career
-score <- .5 * income #scores for each career, based on income
+score <-  .5*income #scores for each career, based on income
 #convert scores to probabilities
 p <- softmax(score[1],score[2],score[3])
 
@@ -629,6 +629,7 @@ for (i in 1:N){
 table(career)
 #so this just gives choice of careers 1,2,3 in the proportions of p 1 to 3.
 #I don't understand softmax here because I don't understand 'score'
+```
 
 ```{r codem11.56}
 code_m11.13 <- "
@@ -655,6 +656,7 @@ career ~ categorical(p);
 }
 "
 ```
+
 
 ```{r code11.57}
 dat_list <- list(N=N, K=3, career = career, career_income=income)

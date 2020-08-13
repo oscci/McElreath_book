@@ -8,7 +8,8 @@ NB - because ulam models take a long time to run, I have saved the workspace wit
 Can also save specific models
 ```{r savemodels}
 objectlist<-c(m12.1,m12.3,m12.4,m12.5,m12.6a,m12.6) 
-save(objectlist,file="ch12models.RData") 
+objectlist<-c(m12.5)
+save(objectlist,file="ch12model125.RData") 
 
 ```
 
@@ -475,7 +476,7 @@ barplot(t(delta),xlab='index', main='Dirichlet simulated runs\nalpha=2, beta=7')
 
 #What happens if alpha increases to 40
 delta <- rdirichlet(10,alpha=rep(40,7))
-barplot(t(delta),xlab='index', main='Dirichlet simulated runs\nalpha=40, beta=7') #t for transpose
+barplot((delta),xlab='index', main='Dirichlet simulated runs\nalpha=40, beta=7') #t for transpose
 
 
 #What happens if alpha set to .1
