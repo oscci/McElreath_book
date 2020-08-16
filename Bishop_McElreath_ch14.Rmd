@@ -1,0 +1,123 @@
+---
+title: "Chapter 14: Adventures in Covariance"
+output: html_notebook
+---
+
+Example problem of recording average wait for coffee in a cafe. This time you can get an estimate for morning and afternoon. Morning tends to be longer wait. Difference between morning and afternoon gives a slope.  
+Intercept corresponds to average wait in morning and slope to effect of treatment (am or pm).
+
+Formally
+   $$\mu_i = \alpha_{CAFE[i]} + \beta_{CAFE[i]} A_j$$
+   
+Pooling gives more efficient estimates - for both intercepts and slopes. Any batch of parameters with exchangeable index values can and probably should be pooled.  
+Exchangeable just means they are arbitrary labels - no true ordering. 
+
+But intercepts and slopes are related. Floor and ceiling effects etc.
+More scope for big change if high value to start with.  
+
+At this point we are warned this material is difficult!  
+
+It is possible to use pooling with categories such as age or location - we can model covariation among continuous categories.  
+
+## 14.1 Varying slopes by construction  
+To pool information across intercepts and slopes we need to moel the join population of intercepts and slopes - ie. model their covariance.  
+Need a joint multivariate Gaussian distribution for all the varying effects - rather than separate distributions, assign a 2D Gaussian distribution to include intercepts and slopes as the 2 dimensions. 
+
+We'll do this by simulating the coffee shop example. 
+
+```{r code14.1}
+require(rethinking)
+a <- 3.5        #average morning wait time
+b <- (-1)       #average difference afternoon wait time
+sigma_a <-1     #SD of intercepts
+sigma_b <- .5   #SD of slopes
+rho <- (-.7)    #correlation between intercepts and slopes
+
+#vector of means of a and b for cafes
+Mu <- c(a,b)
+#use matrix to build entire cov matrix directly
+cov_ab <- sigma_a*sigma_b*rho
+Sigma <- matrix(c(sigma_a^2, cov_ab,cov_ab,sigma_b^2),ncol=2)
+
+#alternative approach
+sigmas <- c(sigma_a, sigma_b)   #standard deviations
+Rho <- matrix(c(1,rho,rho,1),nrow=2) #correlation matrix
+
+#matrix multiplication to get the covariance matrix
+Sigma <- diag(sigmas)%*% Rho %*% diag(sigmas)
+
+#now simulate cafes
+N_cafes <- 20
+library(MASS)
+set.seed(5) 
+vary_effects <- mvrnorm(N_cafes,Mu,Sigma)
+a_cafe <- vary_effects[,1]
+b_cafe <- vary_effects[,2]
+colnames(vary_effects) <- c('a','b')
+head(vary_effects)
+
+plot(a_cafe,b_cafe,col=rangi2)
+#overlay population distribution
+library(ellipse)
+for (l in c(.1,.3,.5,.8,.99)){
+  lines(ellipse(Sigma, centre=Mu,level=l),col=col.alpha("black",.2))
+}
+```
+
+SO far we simulated cafes and their average properties.  
+We now simulate 10 visits to each cafe, 5 in morning and 5 in afternoon.
+
+```{r code14.10}
+set.seed(22)
+N_visits <- 10
+afternoon <- rep(0:1,N_visits*N_cafes/2)
+cafe_id <- rep(1:N_cafes,each=N_visits)
+mu <- a_cafe[cafe_id] + b_cafe[cafe_id]*afternoon
+sigma <- .5 #sd within cafes
+wait <-  rnorm(N_visits*N_cafes,mu,sigma)
+d<- data.frame(cafe=cafe_id,afternoon=afternoon, wait=wait)
+head(d)
+```
+
+Clusters in data are the cafes. Each cluster observed under 2 conditions, am and pm.
+Can estimate an individual intercepts for each cluster and an individual slope.
+
+Everything is balanced - not required for MLM
+
+14.1.3 Varying slopes model.
+
+As well as the usual priors for average intercept and average slope, with have prior for correlation matrix. For this we use the function rlkjcorr. We will just look at what this does.
+
+```{r code14.11}
+N = 100000  #I varied N so I could understand better
+eta = 2 #when eta =1 , all correlations equally likely; when it gets bigger peaks more at zero
+R <- rlkjcorr(N,K=2,eta=eta)
+dens(R[,1,2],xlab='correlation')
+#R is a 3D array 10000 x 2 x 2
+
+#If you set N to 10, you have 10 values with random correlations in col 1 and 1 in col 2,
+#plus 10 values with the reverse assignment. 
+# dens(R[,2,1]) gives same as dens(R[,1,2])
+# Seems redundant!
+```
+
+Now we are ready to fit the model.
+```{r code14.12}
+set.seed(867530)
+m14.1 <- ulam(
+  alist(
+    wait ~ normal (mu,sigma),
+    mu <- a_cafe[cafe]+b_cafe[cafe]*afternoon,
+    c(a_cafe,b_cafe)[cafe] ~ multi_normal(c(a,b),Rho,sigma_cafe),
+    a ~ normal(5,2),
+    b ~ normal(-1,.5),
+    sigma_cafe ~ exponential(1),
+     sigma ~ exponential(1),
+    Rho ~ lkj_corr(2)
+  ),data=d,chains=4,cores=4)
+
+precis(m14.1,depth=2)
+
+```
+
+
