@@ -116,8 +116,131 @@ m14.1 <- ulam(
     Rho ~ lkj_corr(2)
   ),data=d,chains=4,cores=4)
 
-precis(m14.1,depth=2)
+precis(m14.1,depth=3) #with depth 3 you can see the Rho values (matrix parameters)
 
 ```
 
+```{r code14.13}
+post <- extract.samples(m14.1)
+dens(post$Rho[,1,2],xlim=c(-1,1),col='blue',xlab='correlation',main='Correlation between intercepts and slopes') #posterior off-diagonal value of Rho
+R <- rlkjcorr(1e4,K=2,eta=2) #prior
+dens(R[,1,2],add=TRUE,lty=2)
+text(0.1,2,'m14.1\nblue is posterior, dotted black is prior')
+
+
+```
+
+Posterior r is bunched below zero - model has learned negative correlation from data.
+
+M suggests trying a different prior, so we'll change it to a flat prior
+
+```{r code14.12a}
+set.seed(867530)
+m14.1a <- ulam(
+  alist(
+    wait ~ normal (mu,sigma),
+    mu <- a_cafe[cafe]+b_cafe[cafe]*afternoon,
+    c(a_cafe,b_cafe)[cafe] ~ multi_normal(c(a,b),Rho,sigma_cafe),
+    a ~ normal(5,2),
+    b ~ normal(-1,.5),
+    sigma_cafe ~ exponential(1),
+     sigma ~ exponential(1),
+    Rho ~ lkj_corr(1)
+  ),data=d,chains=4,cores=4)
+
+precis(m14.1a,depth=3) #with depth 3 you can see the Rho values (matrix parameters)
+```
+
+```{r plot2priors}
+posta <- extract.samples(m14.1a)
+dens(posta$Rho[,1,2],xlim=c(-1,1),col='blue',xlab='correlation',main='Correlation between intercepts and slopes') #posterior off-diagonal value of Rho
+dens(post$Rho[,1,2],xlim=c(-1,1),col='red',xlab='correlation',main='Correlation between intercepts and slopes',add=TRUE) #posterior off-diagonal value of Rho
+R <- rlkjcorr(1e4,K=2,eta=1) #prior
+dens(R[,1,2],add=TRUE,lty=2,col='blue')
+R <- rlkjcorr(1e4,K=2,eta=2) #prior
+dens(R[,1,2],add=TRUE,lty=2,col='red')
+text(0.1,2,'m14.1 and 1a\nblue with flat prior, red with eta =2, \npriors as dotted')
+```
+
+```{r code14.14}
+#compute unpooled estimates directly from data
+a1 <- sapply(1:N_cafes,
+             function(i) mean(wait[cafe_id==i & afternoon ==0]))
+b1 <- sapply(1:N_cafes,
+             function(i) mean(wait[cafe_id==i & afternoon ==1]))-a1
+
+# extract posterior means of partially pooled estimates
+post <- extract.samples(m14.1)
+a2 <- apply(post$a_cafe,2,mean)
+b2 <- apply(post$b_cafe,2,mean)
+
+#plot both and connect with lines
+plot(a1,b1,xlab='intercept',ylab='slope',
+     pch=16,col=rangi2,ylim=c(min(b1)-0.1,max(b1)+.1),
+     xlim=c(min(a1)-.01,max(a1)+.01),
+     main='Raw unpooled intercepts & slopes (blue) vs \npartially pooled posterior means (unfilled)')
+points(a2,b2,pch=1)
+for (i in 1:N_cafes) lines(c(a1[i],a2[i]),c(b1[i],b2[i]))
+
+#Now superimpose contours
+# compute posterior mean bivariate Gaussian
+Mu_est <- c(mean(post$a),mean(post$b))
+rho_est <- mean(post$Rho[,1,2])
+sa_est <- mean(post$sigma_cafe[,1])
+sb_est <- mean(post$sigma_cafe[,2])
+cov_ab <-sa_est*sb_est*rho_est
+Sigma_est <- matrix(c(sa_est^2,cov_ab,cov_ab,sb_est^2),ncol=2)
+
+#draw contours
+library(ellipse)
+for (l in c(.1,.3,.5,.8,.99))
+  lines(ellipse(Sigma_est,centre=Mu_est,level=l),
+        col=col.alpha("black",.2))
+
+```
+
+This plot shows (a) negative correlation between slopes and intercepts and (b) shrinkage, whereby more extreme values become less extreme in the estimates.
+
+Note that the lines connecting observed and estimated are angled, reflecting the negative correlation between slopes and intercepts. Even if intercept is average, its estimated value will change both intercept and slope.
+
+To show same information on the outcome scale, ie waiting times, we have to compute these from the linear model.
+
+```{r code14.16}
+wait_morning_1 <- (a1)
+wait_afternoon_1 <- (a1+b1)
+wait_morning_2 <-(a2)
+wait_afternoon_2 <-(a2+b2)  #? what's with the brackets here?
+
+#plot both and connect with lines
+plot(wait_morning_1,wait_afternoon_1,xlab='morning wait',
+     ylab='afternoon wait',pch=16, col=rangi2,
+     ylim=c(min(wait_afternoon_1)-.1,max(wait_afternoon_1)+.1),
+     xlim = c(min(wait_morning_1)-.1,max(wait_morning_1)+.1)
+     )
+points(wait_morning_2,wait_afternoon_2,pch=1)
+for (i in 1:N_cafes)
+  lines(c(wait_morning_1[i],wait_morning_2[i]),
+        c(wait_afternoon_1[i],wait_afternoon_2[i]))
+abline(a=0,b=1,lty=2) #dashed line shows when afternoon and morning waits are the same
+
+#simulate data for contour
+v <- mvrnorm(1e4,Mu_est,Sigma_est)
+v[,2] <-v[,1]+v[,2] #calculate afternoon wait
+Sigma_est2 <- cov(v)
+Mu_est2 <- Mu_est
+Mu_est2[2] <- Mu_est[1]+Mu_est[2]
+
+#draw contours
+library(ellipse)
+for (l in c(.1,.3,.5,.8,.99))
+  lines(ellipse(Sigma_est2,centre=Mu_est2,level=l),
+        col=col.alpha("black",.5))
+
+
+```
+
+Shows that shrinkage on parameter scale produces shrinkage on the outcome scale.
+Gray contours imply a population of wait times. 
+See positive correlation - ie some cafes generally have longer waits than others. 
+But most fall below line, ie shorter waits in afternoon.
 
