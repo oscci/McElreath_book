@@ -427,3 +427,148 @@ points( 1:28+xo , p_mu , pch=c(1,1,16,16) )
 ```
 
 Notes that cost of non-centered forms is that they look a lot more confusing, so limit code sharing. Also non-centered is not always better.
+
+## 14.3 Instruments and causal designs
+
+In a DAG, some paths are causal and we want to leave them open. Others are non-causal, e.g. backdoor paths. We want to close them.  
+
+Often you can't close all non-causal paths - there will be unobserved confounds.  
+
+Can sometimes still get at causality.  
+
+Consider impact of education, E, on wages, W.  
+May be factors that influence both of these, e.g. how industrious.  
+
+If this is unobserved, we can't control for it.  
+
+In this case, look for an __instrumental variable__ .
+Terminology: U is unobserved variable, E is education and W is wages.  
+We look for Q, an instrumental variable, satisfying these conditions:  
+
+a. Independent of U
+b. Not independent of E
+c. Cannot influence W except through E.
+
+c is the exclusion restriction and is often implausible.  
+
+Simple model:
+```{r instrumental}
+dag <- dagitty( "dag {
+    E -> W
+    U -> W
+    U -> E
+    Q -> E
+}")
+plot(graphLayout(dag))
+
+```
+
+Can't just add E, U and Q into model to predict W; there is noncausal path from Q to W through U
+  Q -> E <- U -> W
+  We are conditioning on E, and E is a collider of Q and U, so non-causal path is open. This confounds the coefficient on Q - can amplify bias. 
+  
+Suppose Q is quarter of year one is born in. This is independent of U, but affects E, so is instrumental. 
+
+Simulate data to understand it:
+
+```{r code14.23}
+N <- 500
+b <- 0 #made it explicit this is a slope that you can set to 0 or other value
+U_sim <- rnorm(N)
+Q_sim <- sample(1:4,size=N,replace = TRUE)
+E_sim <- rnorm(N,U_sim+Q_sim)
+W_sim <- rnorm( N , U_sim + b*E_sim )
+dat_sim <- list(
+  W = standardize(W_sim),
+   E = standardize(E_sim),
+   Q = standardize(Q_sim))
+
+#I'm just adding correlation matrix
+require(corrr)
+correlate(cbind(W_sim,U_sim,E_sim,Q_sim))
+```
+First model just regresses wages on education
+
+```{r code 14.24}
+m14.4 <- ulam( 
+alist(
+W ~ dnorm( mu , sigma ),
+mu <- aW + bEW*E,
+aW ~ dnorm( 0 , 0.2 ),
+bEW ~ dnorm( 0 , 0.5 ),
+sigma ~ dexp( 1 )
+) , data=dat_sim , chains=4 , cores=4 )
+precis( m14.4 )
+
+
+
+```
+
+Note that we know that bEW is zero, because we set it to that value in the simulation, but here it looks as if there is a real effect because of the effect of U.
+
+Next show it is even worse if we add Q as a predictor
+
+
+```{r code 14.25}
+m14.5 <- ulam( 
+alist(
+W ~ dnorm( mu , sigma ),
+mu <- aW + bEW*E +bQW*Q,
+aW ~ dnorm( 0 , 0.2 ),
+bEW ~ dnorm( 0 , 0.5 ),
+bQW ~dnorm( 0 , 0.5 ),
+sigma ~ dexp( 1 )
+) , data=dat_sim , chains=4 , cores=4 )
+precis( m14.5 )
+
+
+
+```
+
+To get the right model, need a generative version of DAG, which has submodels.
+These are given in the book as formulae, but they actually just reflect the lines of code used in the simulation.  
+We then estimate covariance between W and E - this is not descriptive covariance btween variables, but a matrix of sigmas, which is taking U into account.
+We have a multivariate linear model with multiple simulataenous outcomes all modelled with join error structure.  
+
+In the model this is:
+
+```{r code14.26}
+m14.6 <- ulam(
+  alist(
+    c(W,E) ~ multi_normal(c(muW,muE),Rho,Sigma),
+  muW <- aW + bEW*E,
+  muE <- aE + bQE*Q,
+  c(aW,aE) ~ normal(0,0.2),
+  c(bEW,bQE) ~ normal (0,.5),
+  Rho ~ lkj_corr(2),
+  Sigma ~ exponential(1)
+  ), data=dat_sim, chains=4, cores=4)
+
+precis(m14.6,depth=3)
+
+```
+Note that bEW is close to zero - this is correct, as it agrees with simulation.
+Rho[1,2] is 'residual correlation' between E and W (not raw correlation) - reflects fact that both are influenced by U.
+
+
+Small digression. I had actually thought that what we'd do would be to make a kind of sequential model that would reflect the order in which variables are created. But would that work? 
+
+- reading on to the Rethinking box, it looks like what I am describing here is '2 stage least squares' which M says is potentially problematic!
+
+
+Genuinely useful instrumental variables are hard to find.  
+
+Instrumental variables are natural experiments that impersonate randomized experiments.  E.g. quarter of birth is like an external manipulation of education, E. 
+
+Other natural experiments that can be useful.  
+
+## Front door criterion.
+
+Where you have X -> Z -> Y with U also affecting X and Y.  
+We are interested in causal influence of X on Y.  
+Z is a mediator.  
+
+## Regression discontinuity. 
+Trend fit to those just below and above a cutoff. Causal effect is average difference between individuals just above and just below cutoff. Influenced by entire function.
+
+
