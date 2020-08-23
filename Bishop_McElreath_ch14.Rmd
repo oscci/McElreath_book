@@ -571,4 +571,117 @@ Z is a mediator.
 ## Regression discontinuity. 
 Trend fit to those just below and above a cutoff. Causal effect is average difference between individuals just above and just below cutoff. Influenced by entire function.
 
+# 14.4 Social relations as correlated varying effects  
+
+```{r code14.30}
+library(rethinking)
+data(KosterLeckie)
+
+plot(kl_dyads$giftsAB,kl_dyads$giftsBA)
+r<-round(cor(kl_dyads$giftsAB,kl_dyads$giftsBA),3)
+abline(0,1,lty=2)
+text(40,80,paste0('r = ',r))
+```
+
+This loads 2 sets of data - we will use kl_dyads.  
+Gift exchanges between A and B in each direction.
+did is unique dyad ID number
+household ID is hidA and hidB
+
+Correlation not a good indicator of relation - depends on who is designated A and B in each dyad.
+Need to separate special effects reflecting relation between dyads, and general effects related to other factors such as poverty.  
+Social relations model, SRM. 
+We model gifts from A toB as a combination of varying effects specific to the household and the dyad. 
+Gift counts are poisson variables - counts with no obvious upper bound.
+
+First part of model:
+
+$$y_{A->B} \sim Poisson(\lambda_{AB})$$
+$$ log\lambda_{AB} = \alpha + g_A + r_B + d_{AB}$$
+Intercept, alpha, represents average gifting rate (on log scale) across all dyads. Other effects offset from this.  
+The g term is varying effect parametr for generalised giving tendency of household A, regardless of dyad.  
+Effect r is generalised receiving of household B regardless of dyad.  
+Effect d is dyad-specific rate that A gives to B.  
+
+Parallel model for B->A
+
+IMplies each household needs a giving and a receiving rate. And each dyad also has an effect for A->B and B->A.  
+The g and r terms need to have possibility to be correlated. 
+Need 2 multinormal priors - one for population of household effects (g and r) and correlation between them; and one for population of dyad effects.
+It's not meaningful which household comes first, so there is a single sigma.
+
+```{r code14.31}
+kl_data <- list(
+  N = nrow(kl_dyads),
+  N_households= max(kl_dyads$hidB),
+  did=kl_dyads$did,
+  hidA = kl_dyads$hidA,
+  hidB = kl_dyads$hidB,
+  giftsAB = kl_dyads$giftsAB,
+  giftsBA = kl_dyads$giftsBA
+)
+
+m14.7 <- ulam(
+  alist(
+    giftsAB ~ poisson (lambdaAB),
+    giftsBA ~ poisson (lambdaBA),
+    log(lambdaAB) <- a +gr[hidA,1]+gr[hidB,2]+d[did,1],
+     log(lambdaBA) <- a +gr[hidB,1]+gr[hidA,2]+d[did,2],
+    a ~ normal(0,1),
+    
+    #gr matrix of varying effects
+    vector[2]:gr[N_households] ~ multi_normal(0,Rho_gr,sigma_gr),
+    Rho_gr ~ lkj_corr(4),
+    sigma_gr ~ exponential(1),
+    
+    ## dyad effects
+transpars> matrix[N,2]:d <-
+compose_noncentered( rep_vector(sigma_d,2) , L_Rho_d , z ),
+matrix[2,N]:z ~ normal( 0 , 1 ),
+cholesky_factor_corr[2]:L_Rho_d ~ lkj_corr_cholesky( 8 ),
+sigma_d ~ exponential(1),
+## compute correlation matrix for dyads
+gq> matrix[2,2]:Rho_d <<- Chol_to_Corr( L_Rho_d )
+), data=kl_data , chains=4 , cores=4 , iter=2000
+)
+
+precis(m14.7,depth=3)
+```
+
+now plot output
+```{r code14.32_3}
+post <- extract.samples( m14.7 )
+g <- sapply( 1:25 , function(i) post$a + post$gr[,i,1] )
+r <- sapply( 1:25 , function(i) post$a + post$gr[,i,2] )
+Eg_mu <- apply( exp(g) , 2 , mean )
+Er_mu <- apply( exp(r) , 2 , mean )
+
+plot( NULL , xlim=c(0,8.6) , ylim=c(0,8.6) , xlab="generalized giving" ,
+ylab="generalized receiving" , lwd=1.5,main='
+Expected giving and receiving, \nomitting dyad-specific effects.')
+
+abline(a=0,b=1,lty=2)
+text(3,6,'Each point is a household and the ellipses \nshow 50% compatibility regions. \nThere is a negative relationship between \naverage giving and average
+receiving across households')
+# ellipses
+library(ellipse)
+for ( i in 1:25 ) {
+Sigma <- cov( cbind( g[,i] , r[,i] ) )
+Mu <- c( mean(g[,i]) , mean(r[,i]) )
+for ( l in c(0.5) ) {
+el <- ellipse( Sigma , centre=Mu , level=l )
+lines( exp(el) , col=col.alpha("black",0.5) )
+}
+}
+# household means
+points( Eg_mu , Er_mu , pch=21 , bg="white" , lwd=1.5 )
+
+dy1 <- apply( post$d[,,1] , 2 , mean )
+dy2 <- apply( post$d[,,2] , 2 , mean )
+plot( dy1 , dy2 ,main='Dyad-specific effects, absent generalized
+giving and receiving.',xlab='Household A in dyad',ylab='Household B in dyad')
+text(-.5,2,'After accounting for overall \nrates of giving and\nreceiving, residual gifts are strongly \ncorrelated within dyads.')
+
+```
+
 
