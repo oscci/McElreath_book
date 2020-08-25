@@ -429,6 +429,27 @@ points( 1:28+xo , p_mu , pch=c(1,1,16,16) )
 Notes that cost of non-centered forms is that they look a lot more confusing, so limit code sharing. Also non-centered is not always better.
 
 ## 14.3 Instruments and causal designs
+Lecture 18 around 19;40 (not in book)
+
+'Multilevel horoscopes'  
+How to think about multilevel models  
+Think about causal model first.  
+Begin with an 'empty' model - random intercepts with relevant clusters - get an idea of how much variation there is in the data before adding predictors.  
+Predictors - default behaviour is to standardize, unless something like ordered categories (Dirichlet)
+Use regularising priors - simulate  
+Add predictors and vary their slopes.  
+If repeat measures, cluster on it and do shrinkage.  
+Can drop varying effects with tiny sigmas.  
+Consider two sorts of posterior predicitons:  
+If interested in original data, then predict about this dataset.  (e.g. if predicting about US states: there is a finite set).  
+But if interested in generalising to new population, generate to new units.  
+Your knowledge of domain trumps everything else.  
+
+Covariance models include social relations, networks, factor analysis, heritability of phenotype, phylogenetic regressions, spatial autocorrelation.
+
+Also __Instrumental variables__
+(Mendelian randomisation is an instance of this) - goes back to Sewall Wright
+
 
 In a DAG, some paths are causal and we want to leave them open. Others are non-causal, e.g. backdoor paths. We want to close them.  
 
@@ -439,11 +460,12 @@ Can sometimes still get at causality.
 Consider impact of education, E, on wages, W.  
 May be factors that influence both of these, e.g. how industrious.  
 
-If this is unobserved, we can't control for it.  
+If this is unobserved, we can't control for it.  Backdooor criterion says cannot control for U as cannot measure it.
 
 In this case, look for an __instrumental variable__ .
 Terminology: U is unobserved variable, E is education and W is wages.  
 We look for Q, an instrumental variable, satisfying these conditions:  
+Q influences exposure of interest, but not the outcome.
 
 a. Independent of U
 b. Not independent of E
@@ -468,6 +490,8 @@ Can't just add E, U and Q into model to predict W; there is noncausal path from 
   We are conditioning on E, and E is a collider of Q and U, so non-causal path is open. This confounds the coefficient on Q - can amplify bias. 
   
 Suppose Q is quarter of year one is born in. This is independent of U, but affects E, so is instrumental. 
+
+(also 'intention to treat' as instrumental variable)
 
 Simulate data to understand it:
 
@@ -530,6 +554,10 @@ These are given in the book as formulae, but they actually just reflect the line
 We then estimate covariance between W and E - this is not descriptive covariance btween variables, but a matrix of sigmas, which is taking U into account.
 We have a multivariate linear model with multiple simulataenous outcomes all modelled with join error structure.  
 
+W and E are drawn from a multivariate distribution that has some covariance between them
+
+Correlation between W and E determines how strong the confound is.  (So we dont need to know U - we just look at its effect in inducing a correlation).
+
 In the model this is:
 
 ```{r code14.26}
@@ -550,6 +578,7 @@ precis(m14.6,depth=3)
 Note that bEW is close to zero - this is correct, as it agrees with simulation.
 Rho[1,2] is 'residual correlation' between E and W (not raw correlation) - reflects fact that both are influenced by U.
 
+(Could be that the correlation is negative - same mathematical model)  
 
 Small digression. I had actually thought that what we'd do would be to make a kind of sequential model that would reflect the order in which variables are created. But would that work? 
 
@@ -559,6 +588,8 @@ Small digression. I had actually thought that what we'd do would be to make a ki
 Genuinely useful instrumental variables are hard to find.  
 
 Instrumental variables are natural experiments that impersonate randomized experiments.  E.g. quarter of birth is like an external manipulation of education, E. 
+
+Some instruments are valid but v weak.Problem with Mendelian randomisation - individual SNPs don't do very much.  
 
 Other natural experiments that can be useful.  
 
@@ -572,6 +603,8 @@ Z is a mediator.
 Trend fit to those just below and above a cutoff. Causal effect is average difference between individuals just above and just below cutoff. Influenced by entire function.
 
 # 14.4 Social relations as correlated varying effects  
+
+Big field of interactions. Behaviour captured in covariances.  
 
 ```{r code14.30}
 library(rethinking)
@@ -587,6 +620,11 @@ This loads 2 sets of data - we will use kl_dyads.
 Gift exchanges between A and B in each direction.
 did is unique dyad ID number
 household ID is hidA and hidB
+
+There are 300 possible dyads from 25 households.
+```{r checkcombs}
+combn(1:25, 2)
+```
 
 Correlation not a good indicator of relation - depends on who is designated A and B in each dyad.
 Need to separate special effects reflecting relation between dyads, and general effects related to other factors such as poverty.  
@@ -605,10 +643,19 @@ Effect d is dyad-specific rate that A gives to B.
 
 Parallel model for B->A
 
-IMplies each household needs a giving and a receiving rate. And each dyad also has an effect for A->B and B->A.  
-The g and r terms need to have possibility to be correlated. 
+Implies each household needs a giving and a receiving rate. And each dyad also has an effect for A->B and B->A.  
+(Dyad effects affected by matrilineal relationship)
+The g and r terms need to have possibility to be correlated. These are not reciprocal - they relate to specific households regardless of other dyad member. 
 Need 2 multinormal priors - one for population of household effects (g and r) and correlation between them; and one for population of dyad effects.
 It's not meaningful which household comes first, so there is a single sigma.
+
+One covariance matrix for household effect - one has g and r terms in - these can be correlated.  2 x 2 matrix with one correlation in it. 
+
+Another covariance matrix, for dyad effects. For each dyad, estimate donation effects in both directions; covariance will reflect how far there is reciprocity, with dij and dji being correlated. (In theory could also be negative relationships).  This has same variance on diagonal because A and B are random.  So matrix has one variance and one correlation. 
+
+
+
+
 
 ```{r code14.31}
 kl_data <- list(
@@ -684,4 +731,11 @@ text(-.5,2,'After accounting for overall \nrates of giving and\nreceiving, resid
 
 ```
 
+Note in output a negative correlation between generalised giving and generalised receiving, evident in plot. Households that give a lot tend to receive less (tend to be rich).  
+
+Ellipses are 50% compatibility ellipses.  
+
+For dyads ,the covariance matrix is strong and positive. Having conditioned on generalised giving and receiving, the relationship is very strong. May be influenced by zeros - once general effects have been taken out, there is big dyad effect.  
+
+(end of lecture 18 also has a homework problem)
 
