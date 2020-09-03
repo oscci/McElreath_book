@@ -739,3 +739,25 @@ For dyads ,the covariance matrix is strong and positive. Having conditioned on g
 
 (end of lecture 18 also has a homework problem)
 
+
+#After discussion
+Attempt to see how figure 14.9 on left relates to actual means for giving/receiving
+
+I had expected this to look like figure 14.9 left, but it didn't. But of course! This is because the mean incorporates both the generalised effects AND the dyad effects.
+
+```{r dbtrymeans}
+
+#need to add dummy rows for same household give/receive in order to aggregate data correctly - just create dummy rows at top with zero giving/receiving
+kl_dyads<-rbind(kl_dyads[1:25,],kl_dyads) #add 25 dummy rows to top
+#these are copied from original kl_dyads - we'll overwrite.
+for (h in 1:25){
+  kl_dyads[h,1:2]<-h
+  kl_dyads[h,4:5]<-0 #zero for giving/receiving to self!
+}
+agg1<-aggregate(kl_dyads$giftsAB,by=list(kl_dyads$hidA),FUN=mean)
+agg2<-aggregate(kl_dyads$giftsBA,by=list(kl_dyads$hidA),FUN=mean)
+
+plot(agg2$x,agg1$x,xlab='mean given',ylab='mean received')
+abline(0,1)
+
+```
