@@ -1760,4 +1760,3 @@ for (i in 1:20){
   lines(wtrange,mu[i,])
 }
 ```
-
