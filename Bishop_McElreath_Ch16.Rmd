@@ -1,0 +1,253 @@
+---
+title: "Rethinking ch 16 Notebook"
+output: html_notebook
+---
+
+
+
+```{r loadpackages}
+require(rethinking)
+set_ulam_cmdstan(TRUE) 
+```
+
+But there are problems with this GLMs-plus-DAGs approach. Not everything can be
+modeled as a GLM—a linear combination of variables mapped onto a non-linear outcome.  
+
+We will work directly with Stan model code, since ulam() is not flexible enough for some of the examples.  
+
+Consider relation between height and weight. Correlation but does not give us any information about causation. 
+
+Could model this from what we know about a cylinder. 
+Weight of the cylinder is a consequence of the volume of the cylinder.
+Volume of the cylinder is a consequence of growth in the height and width of the
+cylinder. 
+If we can relate the height to the volume, then we’d have a model to predict
+weight from height  
+
+Volume of cylinder :
+$$V = \pi r^2h$$
+r is radius  
+
+Assume radius is constant proportion of height, so r = p.h  
+Weight is proportion of volume: W = k.v  
+
+So we can work through the algebra, and get a formula that predicts weight from height, assuming we know p and k.  
+
+$$ W = k\pi p^2h^3$$
+
+Obviously an oversimplification, but can use to make predicitions.  
+
+We can use this formula in a statistical model.  
+
+$$W_i \sim LogNormal(\mu_i, \sigma)    $$
+
+$$exp(\mu_i) = k\pi p^2h^3$$
+Then we need to specify priors for k and p. For sigma we can select Exponential(1) as usual.   
+
+Note distribution for the observed outcome variable, weight Wi is positive and continuous, so chose Log-Normal distribution. The Log-Normal distribution is parameterized by the mean
+of the logarithm, mu.i. Exp of mu_i is the *median* of the Log-Normal. 
+
+This is a scientifically informed model so parameters have meanings.  
+
+Parameters k and p are multiplied in the model: we estimate their product. The technical
+way this problem could be described is that k and p, given this model and these data, are not
+identifiable.  
+
+We could just replace the product kp2 with a new parameter theta and estimate
+that
+$$exp(\mu_i) = \pi\theta h^3_i$$
+Still need to think about p and k.
+
+p: the ratio of the radius to the height, p = r=h. 
+Must be greater than zero and likely to be much less than .5
+Need distribution bounded between zero and one
+with most of the prior mass below 0.5. A beta distribution will do:
+
+beta(2,18) This prior will have mean 
+2/(2 + 18) = 0:1.
+
+k is the proportion of volume that is weight. 
+It really just translates measurement scales, because changing the units of volume or weight will change its value. 
+eg can be how many kilograms there are per cubic centimeter. We could look
+that up, or maybe use our own bodies to get a prior.  
+
+NB priors are only arbitrary when scientists ignore domain knowledge. Even when we stick with GLMs, prior predictive simulations force us to engage with background knowledge to produce useful, nonarbitrary priors.  
+
+A very useful trick is to instead get rid of the measurement scales altogether  
+measurement scales are arbitrary human inventions  
+eg We can divide divide both height and weight by their mean values so mean is 1.  
+
+Then on this new scaling,plausible value of k would be k ~ Exponential(0.5)  
+
+```{r code16.3}
+data(Howell1)
+d <- Howell1
+# scale observed variables
+d$w <- d$weight / mean(d$weight)
+d$h <- d$height / mean(d$height)
+
+m16.1 <- ulam( 
+alist(
+w ~ dlnorm( mu , sigma ),
+exp(mu) <- 3.141593 * k * p^2 * h^3,
+p ~ beta( 2 , 18 ),
+k ~ exponential( 0.5 ),
+sigma ~ exponential( 1 )
+), data=d , chains=4 , cores=4 )
+precis(m16.1)
+```
+If we related log weight to height we get
+
+log wi = log(k) + log(pi) + 2 log(p) + 3 log(hi)
+
+So this is now a linear model.  
+
+The first three terms above comprise the intercept.  
+Then the term 3 log(hi) is a predictor variable with a fixed coefficient of 3.  
+
+Here GLM approach estimates parameters which are informed by a proper theory (eg need to take cube of height, hence coefficient of 3).  
+
+## 16.2. Hidden minds and observed behavior  
+Inverse problem: how to figure out causes from observations. Hard because many different causes can lead to same outcome.  
+
+Experiment in which 629 children aged 4 to 14 saw four other children choose among three different colored boxes.  
+
+In each trial, three demonstrators choose the same color. The fourth demonstrator chose a different color. So in each trial, one of the colors was the majority choice, another was the minority choice, and the final color was unchosen. How do we figure out from this experiment whether children are influenced by the majority?
+
+I already find this problematic: why are children choosing? Need to have context to make sense of what they do. Could lead to pressures to be same or different
+
+```{r 16.4code}
+
+data(Boxes)
+precis(Boxes)
+
+```
+
+y is choice: 1 indicates the unchosen color, 2 indicates the majority demonstrated color,
+and 3 indicates the minority demonstrated color.
+
+Children could choose at random, or could follow majority.
+(Me: or could be influenced by serial position of demo choices).  
+
+```{r code16.6}
+set.seed(7)
+N <- 30 # number of children
+# half are random
+# sample from 1,2,3 at random for each
+y1 <- sample( 1:3 , size=N/2 , replace=TRUE )
+# half follow majority
+y2 <- rep( 2 , N/2 )
+# combine and shuffle y1 and y2
+y <- sample( c(y1,y2) )
+# count the 2s
+sum(y==2)/N
+
+
+```
+
+About two-thirds of the choices are for the majority color, but only half the children are
+actually following the majority. 
+
+Now goes on to consider possible strategies
+
+(1) Follow the Majority: Copy the majority demonstrated color.
+(2) Follow the Minority: Copy the minority demonstrated color.
+(3) Maverick: Choose the color that no demonstrator chose.
+(4) Random: Choose a color at random, ignoring the demonstrators.
+(5) Follow First: Copy the color that was demonstrated first. This was either the majority
+color (when majority_first equals 1) or the minority color (when 0).
+
+Statistical models run in reverse of generative models. In the generative
+model, we assume strategies and simulate observed behavior. In the statistical model,
+we instead assume observed behavior (the data) and simulate strategies (parameters).  
+
+We can’t directly measure each child’s strategy.  
+Each strategy has a specific probability of producing each choice. We can use that
+fact to compute the probability of each choice, given parameters which specify the probability of each strategy.
+
+Me: is the idea that there is one strategy for all children, or do children have mixture of strategies?  
+
+The unobserved variables are the probabilities that a child uses each of the five strategies. This means five values, but since these must sum to one, we need only four parameters. 
+Use simplex : vector of values that must sum to some constant, usually one.  
+
+FOrmula on p 544 has me confused. Why is s 1 to 5 and j 1 to 3?
+in model, "theta holds the average probability of each behavior, conditional on p."
+Assumes each child has probability ps of using strategy s. (so I assume we model just 5 children?)
+J 1 to 3 is presumably the 3 colours that can be picked.
+
+p  ~ Dirichlet([4, 4, 4, 4, 4]) - are there 5 values because 5 children modelled?
+
+Already confused
+
+```{r reminderDirichlet}
+#my code from ch 12
+a1<-50
+b1<-5
+delta <- rdirichlet(5,alpha=rep(a1,b1)) 
+#rdirichlet(n, alpha)
+# alpha is vector containing shape parameters. 
+# The first number in alpha determines how evenly spaced the probabilities are  - the higher the more equal
+# The 2nd number determines how many bars in the plot
+
+barplot(t(delta),xlab='index', main=paste0('Dirichlet simulated runs\nalpha=',a1,' beta=',b1)) #t for transpose
+
+```
+I still don't understand the vector of 4s in the book.  
+
+Notes that one obs per child so assume all children the same. But children still represented by probabilities rather than being deterministic.  
+
+Coding this model means explicitly coding the logic of each strategy.  
+
+```{r code16.7}
+data(Boxes_model)
+cat(Boxes_model)
+```
+now run model.
+NB, this works but gives warnings about not working in future. SUspect need to do via cmdstan.
+see : https://mc-stan.org/cmdstanr/articles/cmdstanr.html
+
+```{r code16.8}
+# prep data
+dat_list <- list(
+N = nrow(Boxes),
+y = Boxes$y,
+majority_first = Boxes$majority_first )
+# run the sampler
+m16.2 <- stan( model_code=Boxes_model , data=dat_list , chains=3 , cores=3 )
+# show marginal posterior for p
+p_labels <- c("1 Majority","2 Minority","3 Maverick","4 Random","5 Follow First")
+plot( precis(m16.2,2) , labels=p_labels )
+
+
+```
+
+Recall that 45% of the sample chose the majority color. But the posterior distribution is
+consistent with somewhere between 20% and 30% of children following the majority copying
+strategy. Conditional on this model, a similar proportion just copied the first color that was demonstrated. This is what hidden state models can do for us—prevent us from confusing
+behavior with strategy.  
+
+This model can be extended to allow the probabilities of each strategy to vary by age,
+gender, or anything else. In principle, this is easy—you just make ps conditional on the predictor variables.  
+
+Hmm - I'd want to see cases where majority and first did not coincide, to help disambiguate.  But otherwise, this seems overly complicated approach to the problem. 
+Could use simple chi squ to reject the 'all random' 'maverick' and the 'minority' hypotheses. (In fact, latter rejected just by eyeballing).
+
+```{r dbchi}
+myt1<-table(Boxes$y)
+myt1
+chisq.test(myt1)
+#So clearly not random
+
+myt<-table(Boxes$y,Boxes$majority_first)
+myt
+chisq.test(myt)
+#Choice influenced by which is first.
+```
+And might then design a new experiment to explicitly compare FollowFirst and Majority.
+
+I'd also be interested in a FollowLast strategy.  
+Design of study means that because one demo is much more likely than others, it is highly likely to occur in first or last position.  
+
+I can see that the stan approach may start to be useful if you want to look at covariates, but I don't find the outputs it generates all that illuminating.  
+
+The Boxes model above resembles a broader class of model known as a state space model. These models posit multiple hidden states that produce observations. Typically the states are dynamic, changing over time. When the states are discrete categories, the model may be called a hidden Markov model (HMM). Many time series models are state space models, since the true state of the time series is not observed, only the noisy measures.
