@@ -338,3 +338,118 @@ Design of study means that because one demo is much more likely than others, it 
 I can see that the stan approach may start to be useful if you want to look at covariates, but I don't find the outputs it generates all that illuminating.  
 
 The Boxes model above resembles a broader class of model known as a state space model. These models posit multiple hidden states that produce observations. Typically the states are dynamic, changing over time. When the states are discrete categories, the model may be called a hidden Markov model (HMM). Many time series models are state space models, since the true state of the time series is not observed, only the noisy measures.
+
+## 16.3 
+nut cracking example  
+Data are individual bouts of nut-opening.
+```{r code16.9}
+library(rethinking) 
+set_ulam_cmdstan(TRUE)
+data(Panda_nuts)
+
+```
+
+The variables of immediate interest are the outcome nuts_opened, the duration pf the
+bout in seconds, and the individual’s age. The research question is how nut opening skill
+develops and which factors contribute to it.  
+
+(Over)Simple model: As the individual ages, it gets stronger and nut opening rate increases. 
+
+Size increases in proportion to the distance remaining to maximum size.  
+Mt = Mmax(1 -exp(-kt))
+k is a constant  
+t is time  
+
+```{r tryplot}
+Mmax<-30
+t<-1:20
+k<-.2 #can play with different values of k
+mt<-Mmax*(1-exp(-k*t))
+plot(t,mt)
+
+```
+Need strength: is proportional to mass
+St =  beta*Mt
+(if beta is constant, why do we need to model strength?)
+
+Strength helps in at least three ways. First, it lets the animal lift a heavier hammer. Heavier hammers have greater momentum. Second, it lets the animal accelerate the hammer faster than gravity. Third, stronger animals also have longer limbs, which gives them more efficient levers. So it makes sense to assume increasing returns to strength.
+
+(Not clear to me that stronger animals *do* have longer limbs...,but I guess if we are just taking average strength deduced from age this is the case)
+
+Idea of a threshold below which an individual cannot open a single nut in reasonable time.  new parameter alpha expresses the proportionality of strength to nut opening. It translates force into nuts per second.  
+
+Does various simplifications to get to:
+
+$$\lambda = \phi (1-exp(-kt))^\theta$$
+If we then estimate n
+$$ n_i \sim Poisson(\lambda_i)$$
+and need to include d, duration of nut-cracking to get N nuts, so:
+
+$$\lambda_i = d_i \phi (1-exp(-kt_i))^\theta$$
+Priors  
+Chimpanzee reaches adult mass around 12 years of age. So the prior growth curves need to plateau around 12. We need distributions for k and theta that
+accomplish this. And then the prior for ϕ should have a mean around the maximum rate
+of nut opening. I am not really an expert on nut opening. But let’s suppose a professional
+chimpanzee could open one nut per second—several nuts can be pounded at once
+```{r code16.10}
+N <- 1e4 
+phi <- rlnorm( N , log(1) , 0.1 )
+k <- rlnorm( N , log(2), 0.25 )
+theta <- rlnorm( N , log(5) , 0.25 )
+# relative grow curve
+plot( NULL , xlim=c(0,1.5) , ylim=c(0,1) , xaxt="n" , xlab="age" ,
+ylab="body mass" )
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+for ( i in 1:20 ) curve( (1-exp(-k[i]*x)) , add=TRUE , col=grau() , lwd=1.5 )
+# implied rate of nut opening curve
+plot( NULL , xlim=c(0,1.5) , ylim=c(0,1.2) , xaxt="n" , xlab="age" ,
+ylab="nuts per second" )
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+for ( i in 1:20 ) curve( phi[i]*(1-exp(-k[i]*x))^theta[i] , add=TRUE ,
+col=grau() , lwd=1.5 )
+```
+in ulam
+
+```{r code 16.11}
+
+dat_list <- list( 
+n = as.integer( Panda_nuts$nuts_opened ),
+age = Panda_nuts$age / max(Panda_nuts$age),
+seconds = Panda_nuts$seconds )
+m16.4 <- ulam(
+alist(
+n ~ poisson( lambda ),
+lambda <- seconds*phi*(1-exp(-k*age))^theta,
+phi ~ lognormal( log(1) , 0.1 ),
+k ~ lognormal( log(2) , 0.25 ),
+theta ~ lognormal( log(5) , 0.25 )
+), data=dat_list , chains=4 )
+
+```
+
+```{r code16.12}
+post <- extract.samples(m16.4)
+plot( NULL , xlim=c(0,1) , ylim=c(0,1.5) , xlab="age" ,
+ylab="nuts per second" , xaxt="n" )
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+# raw data
+pts <- dat_list$n / dat_list$seconds
+point_size <- normalize( dat_list$seconds )
+points( jitter(dat_list$age) , pts , col=rangi2 , lwd=2 , cex=point_size*3 )
+# 30 posterior curves
+for ( i in 1:30 ) with( post ,
+curve( phi[i]*(1-exp(-k[i]*x))^theta[i] , add=TRUE , col=grau() ) )
+
+```
+
+Some of the model parameters make sense as varying by individual
+while others do not. The scaling parameter theta for example is a feature of the physics,
+not of an individual. Which parameters are allowed to vary by individual is something to
+be decided by scientific knowledge of the parameters.  
+
+
+
+
