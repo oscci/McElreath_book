@@ -363,7 +363,7 @@ t is time
 ```{r tryplot}
 Mmax<-30
 t<-1:20
-k<-.2 #can play with different values of k
+k<-.1 #can play with different values of k
 mt<-Mmax*(1-exp(-k*t))
 plot(t,mt)
 
@@ -386,11 +386,9 @@ $$ n_i \sim Poisson(\lambda_i)$$
 and need to include d, duration of nut-cracking to get N nuts, so:
 
 $$\lambda_i = d_i \phi (1-exp(-kt_i))^\theta$$
-Priors  
-Chimpanzee reaches adult mass around 12 years of age. So the prior growth curves need to plateau around 12. We need distributions for k and theta that
-accomplish this. And then the prior for ϕ should have a mean around the maximum rate
-of nut opening. I am not really an expert on nut opening. But let’s suppose a professional
-chimpanzee could open one nut per second—several nuts can be pounded at once
+# Priors  
+Chimpanzee reaches adult mass around 12 years of age. So the prior growth curves need to plateau around 12. We need distributions for k and theta that accomplish this. And then the prior for ϕ should have a mean around the maximum rate of nut opening. Suppose a professional chimpanzee could open one nut per second — several nuts can be pounded at once
+
 ```{r code16.10}
 N <- 1e4 
 phi <- rlnorm( N , log(1) , 0.1 )
@@ -398,13 +396,13 @@ k <- rlnorm( N , log(2), 0.25 )
 theta <- rlnorm( N , log(5) , 0.25 )
 # relative grow curve
 plot( NULL , xlim=c(0,1.5) , ylim=c(0,1) , xaxt="n" , xlab="age" ,
-ylab="body mass" )
+ylab="body mass",main='Function linking body mass to age' )
 at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
 axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
 for ( i in 1:20 ) curve( (1-exp(-k[i]*x)) , add=TRUE , col=grau() , lwd=1.5 )
 # implied rate of nut opening curve
 plot( NULL , xlim=c(0,1.5) , ylim=c(0,1.2) , xaxt="n" , xlab="age" ,
-ylab="nuts per second" )
+ylab="nuts per second" ,main='Function using phi and theta to predict nut-cracking rate from age')
 at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
 axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
 for ( i in 1:20 ) curve( phi[i]*(1-exp(-k[i]*x))^theta[i] , add=TRUE ,
@@ -426,13 +424,16 @@ phi ~ lognormal( log(1) , 0.1 ),
 k ~ lognormal( log(2) , 0.25 ),
 theta ~ lognormal( log(5) , 0.25 )
 ), data=dat_list , chains=4 )
+precis(m16.4) #see estimates of phi, k and theta
 
 ```
+
+Now plot functions from posterior
 
 ```{r code16.12}
 post <- extract.samples(m16.4)
 plot( NULL , xlim=c(0,1) , ylim=c(0,1.5) , xlab="age" ,
-ylab="nuts per second" , xaxt="n" )
+ylab="nuts per second" , xaxt="n" ,main='Posterior predictive distribution\nBlue points are raw data, point size related to duration')
 at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
 axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
 # raw data
@@ -442,14 +443,182 @@ points( jitter(dat_list$age) , pts , col=rangi2 , lwd=2 , cex=point_size*3 )
 # 30 posterior curves
 for ( i in 1:30 ) with( post ,
 curve( phi[i]*(1-exp(-k[i]*x))^theta[i] , add=TRUE , col=grau() ) )
-
 ```
+
+
 
 Some of the model parameters make sense as varying by individual
 while others do not. The scaling parameter theta for example is a feature of the physics,
 not of an individual. Which parameters are allowed to vary by individual is something to
 be decided by scientific knowledge of the parameters.  
 
+Does seem weird to me that this focuses on physical strength and ignores learning.  
+Duration might depend on success, so nuts/time not an age-neutral measure
+And that we don't first plot the data.  
+
+```{r altplot}
+data(Panda_nuts)
+d<-Panda_nuts
+#make a chimp code that is ordered by age
+require(yarrr)
+d$chimpcode<-100*d$age+d$chimpanzee
+d$efficiency <- d$nuts_opened/d$seconds
+plot(d$chimpcode,d$seconds,col=d$nuts_opened)
+plot(d$chimpcode,d$nuts_opened)
+plot(d$seconds,d$nuts_opened,col=d$age)
+
+pirateplot(nuts_opened~chimpcode,data=d)
+pirateplot(efficiency~chimpcode,data=d)
+
+```
+16H1. Modify the Panda nut opening model so that male and female chimpanzees have different
+maximum adult body mass. The sex variable in data(Panda_nuts) provides the information you
+need. Be sure to incorporate the fact that you know, prior to seeing the data, that males are on average larger than females at maturity.
+
+```{r ex16H1}
+#We can ensure male>female if we add a term related to sex where sex coded as 0 for female and 1 for male.
+d$sexcode<-0
+d$sexcode[d$sex=='m'] <- 1
+ table(d$sex,d$sexcode) #check
+#but which term in equation do we then modify by sex?
+#k determines rate of increase rather than final level.
+ 
+#try plots with various values
+ 
+#use code from 16.10 - look at simulated values of phi, k and theta
+ N <- 1e4
+phi <- rlnorm( N , log(1) , 0.1 )
+hist(phi)  #values go from around .8 to 1.4
+
+k <- rlnorm( N , log(2), 0.25 )
+hist(k) #mode around 2 - we'll use that as constant
+theta <- rlnorm( N , log(5) , 0.25 )
+hist(theta) #median 5 - range 2 to 14
+
+i<-1:3
+k=2
+phi<-c(.8,1,1.4)
+theta<-3
+# implied rate of nut opening curve
+plot( NULL , xlim=c(0,1.5) , ylim=c(0,1.2) , xaxt="n" , xlab="age" ,
+ylab="nuts per second",main='Varying phi with theta and k constant' )
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+for ( i in 1:3 ) curve( phi[i]*(1-exp(-k*x))^theta , add=TRUE ,
+col=grau() , lwd=1.5 )
+
+#so with k and theta constant, changing phi affects final height (higher phi equates to higher final height)
+
+#redo holding phi constant and varying theta
+
+i<-1:3
+k=2
+phi<-1
+theta<-c(1,3,5)
+# implied rate of nut opening curve
+plot( NULL , xlim=c(0,1.5) , ylim=c(0,1.2) , xaxt="n" , xlab="age" ,
+ylab="nuts per second" ,main='Varying theta with phi and k constant')
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+for ( i in 1:3 ) curve( phi*(1-exp(-k*x))^theta[i] , add=TRUE ,
+col=grau() , lwd=1.5 )
 
 
+```
+So this shows that phi affects end point, whereas theta affects the shape of the function - less effect on end point.  
 
+Suggests if we include a sex-specific phi term, we will achieve what we want.  
+
+But how to modify the code from 16.11 to include sex-specific term?
+
+```{r modified16.11}
+require(rethinking)
+set_ulam_cmdstan(TRUE) 
+dat_list <- list( 
+n = as.integer( d$nuts_opened ),
+age = d$age / max(d$age),
+seconds = d$seconds ,
+sexcode2 = d$sexcode+1)
+
+#my attempt to code sex in a way that adds a term only to males is not going to work.
+#Instead I think we need sexspecific phi, so need to make sexcode 1 or 2.
+
+m16.4a <- ulam(
+alist(
+n ~ poisson( lambda ),
+lambda <- seconds*phi[sexcode2]*(1-exp(-k*age))^theta,
+#Attempt to use .5 or 1.5 for the log term according to sex
+phi[sexcode2] ~ lognormal( log(1) , 0.1 ), #gives error 'sexcode2 not in scope'
+k ~ lognormal( log(2) , 0.25 ),
+theta ~ lognormal( log(5) , 0.25 )
+), data=dat_list , chains=4 )
+precis(m16.4a,depth=2)
+```
+So we now have two phi values estimated. Larger value for males.
+We can redo the posterior plot with these.
+
+```{r code16.12a}
+post <- extract.samples(m16.4a)
+plot( NULL , xlim=c(0,1) , ylim=c(0,1.5) , xlab="age" ,
+ylab="nuts per second" , xaxt="n" ,main='Posterior predictive distribution\nBlue points are raw data, point size related to duration')
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+# raw data
+pts <- dat_list$n / dat_list$seconds
+point_size <- normalize( dat_list$seconds )
+points( jitter(dat_list$age) , pts , col=rangi2 , lwd=2 , cex=point_size*3 )
+# 30 posterior curves
+for ( i in 1:30 ) with( post ,
+curve( phi[i,1]*(1-exp(-k[i]*x))^theta[i] , add=TRUE , col=grau() ) )
+for ( i in 1:30 ) with( post ,
+curve( phi[i,2]*(1-exp(-k[i]*x))^theta[i] , add=TRUE ) )
+```
+So we now get different curves for males and females. (Males are black, females are grey).
+
+
+16H2. Now return to the Panda nut model and try to incorporate individual differences. There are two parameters, ϕ and k, which plausibly vary by individual. Pick one of these, allow it to vary by individual, and use partial pooling to avoid overfitting. The variable chimpanzee in data(Panda_nuts) tells you which observations belong to which individuals.  
+We tried varying phi.  
+
+
+```{r code 16.11sub}
+
+dat_list <- list( 
+n = as.integer( Panda_nuts$nuts_opened ),
+age = Panda_nuts$age / max(Panda_nuts$age),
+chimp = Panda_nuts$chimpanzee,
+seconds = Panda_nuts$seconds )
+m16.4b <- ulam(
+alist(
+n ~ poisson( lambda ),
+lambda <- seconds*phi[chimp]*(1-exp(-k*age))^theta,
+phi[chimp] ~ lognormal( log(muphi) , sigmaphi),
+k ~ lognormal( log(2) , 0.25 ),
+theta ~ lognormal( log(5) , 0.25 ),
+muphi ~ lognormal(1,.5), #we weren't sure about these priors!
+sigmaphi ~ dexp(1)
+), data=dat_list , chains=4 )
+
+precis(m16.4b,depth=2)
+```
+
+```{r code16.12b}
+
+plot( NULL , xlim=c(0,1) , ylim=c(0,1.5) , xlab="age" ,
+ylab="nuts per second" , xaxt="n" )
+at <- c(0,0.25,0.5,0.75,1,1.25,1.5)
+axis( 1 , at=at , labels=round(at*max(Panda_nuts$age)) )
+# raw data
+pts <- dat_list$n / dat_list$seconds
+point_size <- normalize( dat_list$seconds )
+points( jitter(dat_list$age) , pts , col=rangi2 , lwd=2 , cex=point_size*3 )
+means <- p[1:22,1] #mean phi values
+k<-p[23,1]
+theta<-p[24,1]
+
+for ( i in 1:22 ){
+
+curve( means[i]*(1-exp(-k*x))^theta , add=TRUE , col=grau() ) 
+
+}
+
+```
